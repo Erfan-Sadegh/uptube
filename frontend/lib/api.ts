@@ -73,6 +73,7 @@ export const api = {
       body: JSON.stringify({ segments })
     }),
   upload: (jobId: string) => request<Job>(`/api/jobs/${jobId}/upload`, { method: "POST" }),
+  retryJob: (jobId: string) => request<Job>(`/api/jobs/${jobId}/retry`, { method: "POST" }),
   cancelJob: (jobId: string) => request<Job>(`/api/jobs/${jobId}/cancel`, { method: "POST" }),
   reportJob: (jobId: string, reason: string, details: string | null) =>
     request<{ id: string; reason: string; createdAt: string }>(`/api/jobs/${jobId}/report`, {

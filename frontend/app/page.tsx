@@ -226,6 +226,7 @@ export default function Home() {
   const currentStatus = job ? statusCopy[job.status] || { title: job.status, detail: "" } : null;
   const isWorking = job ? activeStatuses.has(job.status) : false;
   const canRetryUpload = Boolean(job?.status === "failed" && job.errorCode === "upload_failed" && job.retryable && me?.youtubeConnected);
+  const canRetryProcessing = Boolean(job?.status === "failed" && job.errorCode === "processing_failed" && job.retryable);
   const canStart = useMemo(
     () => url.trim().length > 8 && Boolean(me?.youtubeConnected) && !busy && !isWorking,
     [url, me?.youtubeConnected, busy, isWorking]
@@ -299,6 +300,20 @@ export default function Home() {
       await refreshJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish to YouTube.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryProcessing() {
+    if (!job) return;
+    setBusy(true);
+    setError(null);
+    try {
+      applyJob(await api.retryJob(job.id));
+      await refreshJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not retry this sync.");
     } finally {
       setBusy(false);
     }
@@ -685,6 +700,15 @@ export default function Home() {
                   >
                     <X className="h-4 w-4" />
                     Cancel Process
+                  </button>
+                ) : canRetryProcessing ? (
+                  <button
+                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                    disabled={busy}
+                    onClick={retryProcessing}
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Retry Sync
                   </button>
                 ) : canRetryUpload ? (
                   <button

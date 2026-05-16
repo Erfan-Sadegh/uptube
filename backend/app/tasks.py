@@ -1,4 +1,5 @@
 import shutil
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
@@ -14,7 +15,7 @@ from app.core.security import TokenCipher
 from app.db import SessionLocal
 from app.jobs.state import JobStatus, can_transition
 from app.models import Artifact, Job, JobEvent, SubtitleSegment, now
-from app.services.aparat import AparatDownloader
+from app.services.aparat import AparatDownloader, AparatValidationError
 from app.services.artifacts import MetisStorageClient
 from app.services.audio import extract_audio, media_duration_seconds, split_audio
 from app.services.metis import MetisTranscriptionProvider
@@ -81,7 +82,12 @@ def process_job(job_id: str) -> None:
                 settings.max_video_duration_seconds,
                 settings.max_video_bytes,
             )
-            metadata = downloader.inspect(job.aparat_url)
+            metadata = _retry_aparat_step(
+                db,
+                job,
+                lambda: downloader.inspect(job.aparat_url),
+                "Aparat did not respond while reading the video",
+            )
             _ensure_not_cancelled(db, job)
             job.title = job.title or metadata.title or "Aparat video"
             job.description = job.description or (
@@ -92,7 +98,12 @@ def process_job(job_id: str) -> None:
             db.commit()
 
             _transition(db, job, JobStatus.DOWNLOADING, "downloading", "Downloading source video")
-            source_video = downloader.download(job.aparat_url, work_dir)
+            source_video = _retry_aparat_step(
+                db,
+                job,
+                lambda: downloader.download(job.aparat_url, work_dir),
+                "Aparat did not respond while downloading the video",
+            )
             _ensure_not_cancelled(db, job)
             _artifact(db, job, "source_video", str(source_video))
 
@@ -473,6 +484,45 @@ def _friendly_error(code: str, message: str) -> str:
     if code == "upload_failed":
         return "YouTube upload failed. You can retry the upload from this step."
     return "Processing failed. Please try again."
+
+
+def _retry_aparat_step(db: Session, job: Job, operation, retry_message: str):
+    attempts = 5
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        _ensure_not_cancelled(db, job)
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            if not _is_retryable_aparat_error(exc) or attempt == attempts:
+                raise
+            delay = min(5 * attempt, 20)
+            message = f"{retry_message}. Retrying in {delay}s ({attempt}/{attempts - 1})."
+            job.progress_message = message
+            db.add(
+                JobEvent(
+                    job_id=job.id,
+                    type="aparat_retrying",
+                    message=message,
+                    event_metadata={"attempt": attempt, "technical_message": str(exc)},
+                )
+            )
+            db.commit()
+            time.sleep(delay)
+    assert last_error is not None
+    raise last_error
+
+
+def _is_retryable_aparat_error(error: Exception) -> bool:
+    if isinstance(error, AparatValidationError):
+        message = str(error).lower()
+        if "duration exceeds" in message or "size exceeds" in message or "must use http" in message:
+            return False
+        return True
+    message = str(error).lower()
+    retry_markers = ("504", "gateway timeout", "timeout", "temporarily", "server error", "expected string or bytes")
+    return any(marker in message for marker in retry_markers)
 
 
 def _ensure_not_cancelled(db: Session, job: Job) -> None:

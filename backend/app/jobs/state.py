@@ -27,7 +27,7 @@ ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.UPLOADING_VIDEO: {JobStatus.UPLOADING_CAPTION, JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED},
     JobStatus.UPLOADING_CAPTION: {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED},
     JobStatus.COMPLETED: set(),
-    JobStatus.FAILED: {JobStatus.UPLOADING_VIDEO},
+    JobStatus.FAILED: {JobStatus.QUEUED, JobStatus.UPLOADING_VIDEO},
     JobStatus.CANCELLED: set(),
 }
 

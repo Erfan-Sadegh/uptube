@@ -185,6 +185,36 @@ def upload_job(
     return _load_job(db, job.id, user.id)
 
 
+@router.post("/{job_id}/retry", response_model=JobOut)
+def retry_job(
+    job_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Job:
+    job = _load_job(db, job_id, user.id)
+    if job.status != JobStatus.FAILED.value or not job.retryable or job.error_code != "processing_failed":
+        raise HTTPException(status_code=409, detail="This job cannot be retried from processing")
+    job.status = JobStatus.QUEUED.value
+    job.error_code = None
+    job.error_message = None
+    job.retryable = False
+    job.progress_percent = 0
+    job.progress_message = "Queued for retry"
+    _event(
+        db,
+        job,
+        "retry_queued",
+        "Processing retry was queued",
+        {"ip": request.client.host if request.client else None, "user_agent": request.headers.get("user-agent")},
+    )
+    db.commit()
+    if not enqueue_process_job(job.id):
+        background_tasks.add_task(process_job, job.id)
+    return _load_job(db, job.id, user.id)
+
+
 @router.post("/{job_id}/cancel", response_model=JobOut)
 def cancel_job(
     job_id: str,
