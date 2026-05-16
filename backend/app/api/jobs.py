@@ -1,16 +1,31 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
 from app.db import get_db
 from app.jobs.state import JobStatus, can_transition
-from app.models import Job, JobEvent, SubtitleSegment, User
-from app.schemas import JobCreate, JobEventOut, JobMetadataUpdate, JobOut, SubtitleUpdate
+from app.models import AbuseReport, Job, JobEvent, User, now
+from app.schemas import JobCreate, JobEventOut, JobMetadataUpdate, JobOut, ReportCreate, ReportOut, SubtitleUpdate
 from app.services.aparat import AparatValidationError, validate_aparat_url
 from app.tasks import enqueue_process_job, enqueue_upload_job, process_job, upload_job as run_upload_job
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+ACTIVE_STATUSES = {
+    JobStatus.QUEUED.value,
+    JobStatus.VALIDATING.value,
+    JobStatus.DOWNLOADING.value,
+    JobStatus.EXTRACTING_AUDIO.value,
+    JobStatus.UPLOADING_AUDIO_TO_METIS.value,
+    JobStatus.TRANSCRIBING.value,
+    JobStatus.UPLOADING_VIDEO.value,
+    JobStatus.UPLOADING_CAPTION.value,
+}
 
 
 @router.post("", response_model=JobOut)
@@ -21,18 +36,22 @@ def create_job(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Job:
+    settings = get_settings()
     if not payload.ownership_confirmed:
         raise HTTPException(status_code=400, detail="Ownership confirmation is required")
     try:
         validate_aparat_url(str(payload.aparat_url))
     except AparatValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _enforce_user_limits(db, user.id, settings.max_jobs_per_user_per_day, settings.max_active_jobs_per_user)
 
     job = Job(
         user_id=user.id,
         aparat_url=str(payload.aparat_url),
         ownership_confirmed=True,
         language=payload.language or "fa",
+        progress_percent=0,
+        progress_message="Queued for processing",
     )
     db.add(job)
     db.flush()
@@ -41,13 +60,34 @@ def create_job(
         job,
         "job_created",
         "Job created and queued",
-        {"ip": request.client.host if request.client else None},
+        {
+            "ip": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "ownership_confirmed": True,
+            "aparat_url": str(payload.aparat_url),
+        },
     )
     db.commit()
     db.refresh(job)
     if not enqueue_process_job(job.id):
         background_tasks.add_task(process_job, job.id)
     return _load_job(db, job.id, user.id)
+
+
+@router.get("", response_model=list[JobOut])
+def list_jobs(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[Job]:
+    return list(
+        db.scalars(
+            select(Job)
+            .where(Job.user_id == user.id)
+            .order_by(Job.created_at.desc())
+            .limit(12)
+            .options(selectinload(Job.subtitles), selectinload(Job.events), selectinload(Job.user))
+        )
+    )
 
 
 @router.get("/{job_id}", response_model=JobOut)
@@ -111,6 +151,7 @@ def update_metadata(
 @router.post("/{job_id}/upload", response_model=JobOut)
 def upload_job(
     job_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -126,11 +167,50 @@ def upload_job(
     job.error_code = None
     job.error_message = None
     job.retryable = False
-    _event(db, job, "upload_queued", "YouTube upload was queued", None)
+    job.progress_percent = 82
+    job.progress_message = "YouTube upload was queued"
+    _event(
+        db,
+        job,
+        "upload_queued",
+        "YouTube upload was queued",
+        {"ip": request.client.host if request.client else None, "user_agent": request.headers.get("user-agent")},
+    )
     db.commit()
     if not enqueue_upload_job(job.id):
         background_tasks.add_task(run_upload_job, job.id)
     return _load_job(db, job.id, user.id)
+
+
+@router.post("/{job_id}/report", response_model=ReportOut)
+def report_job(
+    job_id: str,
+    payload: ReportCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AbuseReport:
+    job = _load_job(db, job_id, user.id)
+    report = AbuseReport(
+        reporter_user_id=user.id,
+        job_id=job.id,
+        aparat_url=job.aparat_url,
+        youtube_video_url=job.youtube_video_url,
+        reason=payload.reason,
+        details=payload.details,
+        reporter_ip=request.client.host if request.client else None,
+    )
+    db.add(report)
+    _event(
+        db,
+        job,
+        "report_created",
+        "User submitted a report",
+        {"reason": payload.reason, "ip": request.client.host if request.client else None},
+    )
+    db.commit()
+    db.refresh(report)
+    return report
 
 
 def _load_job(db: Session, job_id: str, user_id: str) -> Job:
@@ -146,3 +226,29 @@ def _load_job(db: Session, job_id: str, user_id: str) -> Job:
 
 def _event(db: Session, job: Job, event_type: str, message: str, metadata: dict | None) -> None:
     db.add(JobEvent(job_id=job.id, type=event_type, message=message, event_metadata=metadata))
+
+
+def _enforce_user_limits(
+    db: Session,
+    user_id: str,
+    max_jobs_per_day: int,
+    max_active_jobs: int,
+) -> None:
+    active_count = db.scalar(
+        select(func.count()).select_from(Job).where(Job.user_id == user_id, Job.status.in_(ACTIVE_STATUSES))
+    )
+    if active_count and active_count >= max_active_jobs:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {active_count} active jobs. Wait for one to finish before starting another.",
+        )
+
+    since = now() - timedelta(days=1)
+    daily_count = db.scalar(
+        select(func.count()).select_from(Job).where(Job.user_id == user_id, Job.created_at >= since)
+    )
+    if daily_count and daily_count >= max_jobs_per_day:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily beta limit reached: {max_jobs_per_day} jobs per user.",
+        )

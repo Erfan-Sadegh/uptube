@@ -5,11 +5,14 @@
 - Backend health: http://127.0.0.1:8000/health
 - Backend runs from `backend/.venv`.
 - FFmpeg is provided by `imageio-ffmpeg`; no system FFmpeg install is required.
+- If Docker/Redis is available, `start-local.ps1` starts Redis and two RQ workers.
 - If Redis is not running, jobs fall back to FastAPI background tasks for local testing.
 
 ## Current Limits
 - Metis STT is configured through `.env`.
 - Metis direct `response_format=srt` currently fails server-side, so local testing uses chunked text transcription and renders SRT locally.
+- Metis chunks run with limited parallelism. Tune `METIS_PARALLEL_CHUNKS` carefully; higher is faster but can hit provider limits.
+- Per-user beta controls are enforced by `MAX_JOBS_PER_USER_PER_DAY` and `MAX_ACTIVE_JOBS_PER_USER`.
 - YouTube real upload still requires Google OAuth credentials:
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`

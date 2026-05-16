@@ -27,7 +27,12 @@ class Settings(BaseSettings):
 
     max_video_duration_seconds: int = 30 * 60
     max_video_bytes: int = 500 * 1024 * 1024
+    max_jobs_per_user_per_day: int = 10
+    max_active_jobs_per_user: int = 2
     local_artifact_dir: Path = Field(default=Path("./tmp/artifacts"))
+    artifact_retention_hours: int = 6
+    metis_parallel_chunks: int = 3
+    audio_chunk_seconds: int = 25
     metis_poll_interval_seconds: int = 5
     metis_timeout_seconds: int = 30 * 60
     session_cookie_name: str = "uptube_user_id"

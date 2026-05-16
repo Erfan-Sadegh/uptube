@@ -1,3 +1,7 @@
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -5,19 +9,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
+from app.core.retry import with_backoff
 from app.core.security import TokenCipher
 from app.db import SessionLocal
 from app.jobs.state import JobStatus, can_transition
-from app.models import Artifact, Job, JobEvent, SubtitleSegment
+from app.models import Artifact, Job, JobEvent, SubtitleSegment, now
 from app.services.aparat import AparatDownloader
 from app.services.artifacts import MetisStorageClient
-from app.services.audio import extract_audio, split_audio
+from app.services.audio import extract_audio, media_duration_seconds, split_audio
 from app.services.metis import MetisTranscriptionProvider
 from app.services.srt import parse_srt, render_srt
 from app.services.youtube import YouTubeUploader
 
 
 QUEUE_NAME = "uptube-jobs"
+
+
+@dataclass(frozen=True)
+class ChunkTranscription:
+    index: int
+    generation_id: str
+    text: str
+    duration_ms: int
 
 
 def enqueue_process_job(job_id: str) -> bool:
@@ -34,9 +47,21 @@ def _enqueue(func_path: str, job_id: str) -> bool:
         from redis import Redis
         from rq import Queue
 
-        queue = Queue(QUEUE_NAME, connection=Redis.from_url(settings.redis_url))
+        connection = Redis.from_url(settings.redis_url)
+        if not _has_active_worker(connection):
+            return False
+        queue = Queue(QUEUE_NAME, connection=connection)
         queue.enqueue(func_path, job_id, job_timeout=60 * 60)
         return True
+    except Exception:
+        return False
+
+
+def _has_active_worker(connection) -> bool:
+    try:
+        from rq import Worker
+
+        return bool(Worker.all(connection=connection))
     except Exception:
         return False
 
@@ -74,37 +99,57 @@ def process_job(job_id: str) -> None:
             _artifact(db, job, "audio", str(audio_path))
 
             _transition(db, job, JobStatus.TRANSCRIBING, "transcribing", "Transcribing audio with Metis")
-            provider = MetisTranscriptionProvider(
-                settings.metis_api_key,
-                poll_interval_seconds=settings.metis_poll_interval_seconds,
-                timeout_seconds=settings.metis_timeout_seconds,
-            )
 
-            chunks = split_audio(audio_path, work_dir / "chunks")
-            metis_storage = MetisStorageClient(settings.metis_api_key)
+            chunks = split_audio(audio_path, work_dir / "chunks", chunk_seconds=settings.audio_chunk_seconds)
+            _event(
+                db,
+                job,
+                "audio_chunked",
+                f"Audio split into {len(chunks)} chunks",
+                {"count": len(chunks), "parallelism": settings.metis_parallel_chunks},
+            )
+            _set_progress(db, job, 42, f"Audio split into {len(chunks)} chunks")
+
+            results: dict[int, ChunkTranscription] = {}
+            completed = 0
+            max_workers = max(1, min(settings.metis_parallel_chunks, len(chunks)))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _transcribe_chunk,
+                        index,
+                        chunk,
+                        job.language,
+                        settings.metis_api_key,
+                        settings.metis_poll_interval_seconds,
+                        settings.metis_timeout_seconds,
+                        settings.audio_chunk_seconds,
+                    ): index
+                    for index, chunk in enumerate(chunks, start=1)
+                }
+                for future in as_completed(futures):
+                    result = future.result()
+                    results[result.index] = result
+                    completed += 1
+                    if result.index == 1 or not job.metis_generation_id:
+                        job.metis_generation_id = result.generation_id
+                    _event(
+                        db,
+                        job,
+                        "metis_chunk_completed",
+                        f"Transcribed chunk {completed} of {len(chunks)}",
+                        {"generation_id": result.generation_id, "chunk_index": result.index},
+                    )
+                    percent = 45 + int((completed / len(chunks)) * 35)
+                    _set_progress(db, job, percent, f"Transcribed {completed} of {len(chunks)} audio chunks")
+
             srt_rows: list[tuple[int, int, int, str]] = []
             offset_ms = 0
-            for index, chunk in enumerate(chunks, start=1):
-                audio_url = metis_storage.upload(chunk)
-                generation_id = provider.create_generation(audio_url, job.language)
-                if index == 1:
-                    job.metis_generation_id = generation_id
-                db.add(
-                    JobEvent(
-                        job_id=job.id,
-                        type="metis_generation_created",
-                        message=f"chunk {index}",
-                        event_metadata={"generation_id": generation_id},
-                    )
-                )
-                db.commit()
-
-                text_result = provider.wait_for_text(generation_id)
-                duration_ms = int((text_result.duration_seconds or 25) * 1000)
-                text = text_result.text.strip()
-                if text:
-                    srt_rows.append((len(srt_rows) + 1, offset_ms, offset_ms + duration_ms, text))
-                offset_ms += duration_ms
+            for index in sorted(results):
+                result = results[index]
+                if result.text:
+                    srt_rows.append((len(srt_rows) + 1, offset_ms, offset_ms + result.duration_ms, result.text))
+                offset_ms += result.duration_ms
 
             if not srt_rows:
                 raise RuntimeError("Metis completed without usable subtitle text")
@@ -113,6 +158,8 @@ def process_job(job_id: str) -> None:
             srt_path.write_text(srt_content, encoding="utf-8")
             _artifact(db, job, "srt", str(srt_path))
             _replace_subtitles(db, job, srt_content)
+            _delete_artifact_kind(db, job, "audio", "Audio cleaned after transcription")
+            _delete_path(work_dir / "chunks")
             _transition(
                 db,
                 job,
@@ -157,6 +204,12 @@ def upload_job(job_id: str) -> None:
                 Path(source_video),
                 job.title or "Aparat video",
                 job.description or "",
+                on_progress=lambda percent: _set_progress(
+                    db,
+                    job,
+                    82 + int(percent * 0.13),
+                    f"Uploading video to YouTube ({percent}%)",
+                ),
             )
             job.youtube_video_id = video_id
             job.youtube_video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -169,8 +222,19 @@ def upload_job(job_id: str) -> None:
                 "uploading_caption",
                 "Uploading SRT caption to YouTube",
             )
-            uploader.upload_caption(video_id, srt_path, job.language)
+            uploader.upload_caption(
+                video_id,
+                srt_path,
+                job.language,
+                on_progress=lambda percent: _set_progress(
+                    db,
+                    job,
+                    95 + int(percent * 0.04),
+                    f"Attaching subtitles ({percent}%)",
+                ),
+            )
             _transition(db, job, JobStatus.COMPLETED, "completed", "Upload completed")
+            _delete_artifact_kind(db, job, "source_video", "Source video cleaned after completion")
         except Exception as exc:
             _fail(db, job, "upload_failed", str(exc), retryable=True)
 
@@ -198,21 +262,47 @@ def _transition(
     job.status = target.value
     job.error_code = None
     job.error_message = None
+    job.retryable = False
+    job.progress_percent = _default_progress(target)
+    job.progress_message = message
     db.add(JobEvent(job_id=job.id, type=event_type, message=message))
     db.commit()
 
 
+def _set_progress(db: Session, job: Job, percent: int, message: str) -> None:
+    job.progress_percent = max(0, min(100, percent))
+    job.progress_message = message
+    db.commit()
+
+
 def _fail(db: Session, job: Job, code: str, message: str, retryable: bool) -> None:
+    user_message = _friendly_error(code, message)
     job.status = JobStatus.FAILED.value
     job.error_code = code
-    job.error_message = message
+    job.error_message = user_message
     job.retryable = retryable
-    db.add(JobEvent(job_id=job.id, type="failed", message=message, event_metadata={"code": code}))
+    job.progress_message = user_message
+    db.add(
+        JobEvent(
+            job_id=job.id,
+            type="failed",
+            message=user_message,
+            event_metadata={"code": code, "technical_message": message},
+        )
+    )
     db.commit()
 
 
 def _artifact(db: Session, job: Job, kind: str, storage_url: str) -> None:
-    db.add(Artifact(job_id=job.id, kind=kind, storage_url=storage_url))
+    settings = get_settings()
+    db.add(
+        Artifact(
+            job_id=job.id,
+            kind=kind,
+            storage_url=storage_url,
+            expires_at=now() + timedelta(hours=settings.artifact_retention_hours),
+        )
+    )
     db.add(JobEvent(job_id=job.id, type="artifact_created", message=kind))
     db.commit()
     db.refresh(job, attribute_names=["artifacts"])
@@ -259,18 +349,124 @@ def _render_job_srt(job: Job) -> str:
 def _refresh_youtube_access_token(encrypted_refresh_token: str) -> str:
     settings = get_settings()
     refresh_token = TokenCipher(settings.token_encryption_key).decrypt(encrypted_refresh_token)
-    response = httpx.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
+
+    def send() -> httpx.Response:
+        response = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response
+
+    response = with_backoff(send, attempts=3, retryable=(httpx.HTTPError,))
     access_token = response.json().get("access_token")
     if not access_token:
         raise RuntimeError("Google refresh did not return an access token")
     return access_token
+
+
+def _transcribe_chunk(
+    index: int,
+    chunk: Path,
+    language: str,
+    api_key: str,
+    poll_interval_seconds: int,
+    timeout_seconds: int,
+    fallback_chunk_seconds: int,
+) -> ChunkTranscription:
+    measured_duration = media_duration_seconds(chunk)
+    audio_url = MetisStorageClient(api_key).upload(chunk)
+    provider = MetisTranscriptionProvider(
+        api_key,
+        poll_interval_seconds=poll_interval_seconds,
+        timeout_seconds=timeout_seconds,
+    )
+    generation_id = provider.create_generation(audio_url, language)
+    text_result = provider.wait_for_text(generation_id)
+    duration_ms = int((text_result.duration_seconds or measured_duration or fallback_chunk_seconds) * 1000)
+    return ChunkTranscription(
+        index=index,
+        generation_id=generation_id,
+        text=text_result.text.strip(),
+        duration_ms=duration_ms,
+    )
+
+
+def _event(db: Session, job: Job, event_type: str, message: str, metadata: dict | None) -> None:
+    db.add(JobEvent(job_id=job.id, type=event_type, message=message, event_metadata=metadata))
+    db.commit()
+
+
+def _default_progress(target: JobStatus) -> int:
+    return {
+        JobStatus.QUEUED: 0,
+        JobStatus.VALIDATING: 5,
+        JobStatus.DOWNLOADING: 12,
+        JobStatus.EXTRACTING_AUDIO: 28,
+        JobStatus.UPLOADING_AUDIO_TO_METIS: 36,
+        JobStatus.TRANSCRIBING: 40,
+        JobStatus.AWAITING_REVIEW: 80,
+        JobStatus.UPLOADING_VIDEO: 82,
+        JobStatus.UPLOADING_CAPTION: 95,
+        JobStatus.COMPLETED: 100,
+        JobStatus.FAILED: 0,
+    }[target]
+
+
+def _friendly_error(code: str, message: str) -> str:
+    lowered = message.lower()
+    if "duration exceeds" in lowered:
+        return "This video is longer than the current beta limit."
+    if "size exceeds" in lowered:
+        return "This video is larger than the current beta limit."
+    if "aparat video could not be inspected" in lowered:
+        return "We could not read this Aparat video. Check that the link is public and try again."
+    if "aparat video could not be downloaded" in lowered:
+        return "We could not download this Aparat video. The source may be private or temporarily unavailable."
+    if "metis" in lowered:
+        return "Subtitle generation failed while contacting Metis. This is retryable."
+    if "youtube account is not connected" in lowered:
+        return "Connect YouTube before uploading."
+    if code == "upload_failed":
+        return "YouTube upload failed. You can retry the upload from this step."
+    return "Processing failed. Please try again."
+
+
+def _delete_artifact_kind(db: Session, job: Job, kind: str, message: str) -> None:
+    changed = False
+    for artifact in job.artifacts:
+        if artifact.kind == kind and not artifact.deleted_at:
+            _delete_path(Path(artifact.storage_url))
+            artifact.deleted_at = now()
+            changed = True
+    if changed:
+        db.add(JobEvent(job_id=job.id, type="artifact_deleted", message=message, event_metadata={"kind": kind}))
+        db.commit()
+
+
+def _delete_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    elif path.exists():
+        path.unlink(missing_ok=True)
+
+
+def cleanup_expired_artifacts() -> int:
+    deleted = 0
+    with SessionLocal() as db:
+        artifacts = db.scalars(
+            select(Artifact).where(Artifact.deleted_at.is_(None), Artifact.expires_at <= now())
+        ).all()
+        for artifact in artifacts:
+            _delete_path(Path(artifact.storage_url))
+            artifact.deleted_at = now()
+            deleted += 1
+        if deleted:
+            db.commit()
+    return deleted

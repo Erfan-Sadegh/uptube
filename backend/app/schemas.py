@@ -23,6 +23,11 @@ class SubtitleUpdate(BaseModel):
     segments: list[SubtitleSegmentUpdate]
 
 
+class ReportCreate(BaseModel):
+    reason: str = Field(min_length=3, max_length=100)
+    details: str | None = Field(default=None, max_length=2000)
+
+
 class SubtitleSegmentOut(BaseModel):
     id: str
     index: int
@@ -60,6 +65,10 @@ class JobOut(BaseModel):
     error_code: str | None = Field(alias="errorCode")
     error_message: str | None = Field(alias="errorMessage")
     retryable: bool
+    progress_percent: int = Field(alias="progressPercent")
+    progress_message: str | None = Field(alias="progressMessage")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
     subtitles: list[SubtitleSegmentOut] = []
 
     class Config:
@@ -74,4 +83,14 @@ class MeOut(BaseModel):
     channel_title: str | None = Field(alias="channelTitle")
 
     class Config:
+        populate_by_name = True
+
+
+class ReportOut(BaseModel):
+    id: str
+    reason: str
+    created_at: datetime = Field(alias="createdAt")
+
+    class Config:
+        from_attributes = True
         populate_by_name = True

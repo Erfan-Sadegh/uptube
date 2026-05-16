@@ -29,6 +29,12 @@ app.include_router(jobs.router)
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    try:
+        from app.tasks import cleanup_expired_artifacts
+
+        cleanup_expired_artifacts()
+    except Exception:
+        pass
 
 
 @app.get("/health")

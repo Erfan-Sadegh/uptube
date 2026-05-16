@@ -71,3 +71,30 @@ def split_audio(audio_path: Path, output_dir: Path, chunk_seconds: int = 25) -> 
     if result.returncode != 0 or not chunks:
         raise AudioExtractionError("FFmpeg failed to split audio")
     return chunks
+
+
+def media_duration_seconds(path: Path) -> float | None:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return None

@@ -4,6 +4,8 @@ import {
   Check,
   CheckCircle2,
   ExternalLink,
+  Flag,
+  History,
   Loader2,
   LogIn,
   Play,
@@ -83,12 +85,24 @@ export default function Home() {
   const [segments, setSegments] = useState<SubtitleSegment[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("quality_issue");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSent, setReportSent] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showJobError, setShowJobError] = useState(true);
 
   useEffect(() => {
-    api.me().then(setMe).catch((err) => setError(err.message));
+    api
+      .me()
+      .then((currentUser) => {
+        setMe(currentUser);
+        return refreshJobs();
+      })
+      .catch((err) => setError(err.message));
   }, []);
 
   useEffect(() => {
@@ -120,6 +134,7 @@ export default function Home() {
 
   const isWorking = job ? activeStatuses.has(job.status) : false;
   const currentStatus = job ? statusCopy[job.status] || { title: job.status, detail: "" } : null;
+  const progressPercent = job?.progressPercent ?? 0;
   const canCreate = useMemo(
     () => url.trim().length > 8 && confirmed && !busy && !isWorking,
     [url, confirmed, busy, isWorking]
@@ -135,6 +150,7 @@ export default function Home() {
 
   function applyJob(next: Job) {
     setJob(next);
+    setJobs((current) => [next, ...current.filter((item) => item.id !== next.id)].slice(0, 12));
     setShowJobError(true);
     if (next.status === "completed" || next.status === "failed") {
       window.localStorage.removeItem("uptube.lastJobId");
@@ -146,12 +162,18 @@ export default function Home() {
     setDescription(next.description || "");
   }
 
+  async function refreshJobs() {
+    const loaded = await api.listJobs();
+    setJobs(loaded);
+  }
+
   function clearCurrentJob() {
     setJob(null);
     setSegments([]);
     setTitle("");
     setDescription("");
     setError(null);
+    setReportOpen(false);
     window.localStorage.removeItem("uptube.lastJobId");
   }
 
@@ -168,6 +190,7 @@ export default function Home() {
     setShowJobError(false);
     try {
       applyJob(await api.createJob(url, confirmed));
+      await refreshJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start processing.");
     } finally {
@@ -186,6 +209,7 @@ export default function Home() {
         segments.map((segment) => ({ id: segment.id, editedText: segment.editedText ?? segment.text }))
       );
       applyJob(saved);
+      await refreshJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save review changes.");
     } finally {
@@ -207,6 +231,7 @@ export default function Home() {
       }
       const queued = await api.upload(job.id);
       applyJob(queued);
+      await refreshJobs();
       window.setTimeout(async () => {
         try {
           applyJob(await api.getJob(job.id));
@@ -218,6 +243,22 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Could not upload to YouTube.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function submitReport() {
+    if (!job) return;
+    setReportBusy(true);
+    setReportSent(false);
+    setError(null);
+    try {
+      await api.reportJob(job.id, reportReason, reportDetails.trim() || null);
+      setReportSent(true);
+      setReportDetails("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit report.");
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -279,6 +320,44 @@ export default function Home() {
           </div>
         </section>
 
+        {jobs.length > 0 ? (
+          <section className="rounded-md border border-[#dfe6e2] bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
+                <History className="h-4 w-4 text-moss" />
+                Recent jobs
+              </h2>
+              <button className="text-xs font-semibold text-moss" onClick={refreshJobs}>
+                Refresh
+              </button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {jobs.slice(0, 3).map((item) => (
+                <button
+                  key={item.id}
+                  className={[
+                    "focus-ring rounded-md border p-3 text-left transition hover:border-[#b8c8c1]",
+                    item.id === job?.id ? "border-moss bg-[#f3f8f5]" : "border-[#e1e8e4] bg-white"
+                  ].join(" ")}
+                  onClick={async () => applyJob(await api.getJob(item.id))}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-semibold">{item.title || item.aparatUrl}</span>
+                    <span className="text-xs text-slate-500">{item.progressPercent}%</span>
+                  </div>
+                  <div className="mt-2 h-1.5 rounded-full bg-[#edf2ef]">
+                    <div
+                      className="h-1.5 rounded-full bg-moss"
+                      style={{ width: `${Math.max(0, Math.min(100, item.progressPercent))}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 truncate text-xs text-slate-500">{item.progressMessage || item.status}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section className="rounded-md border border-[#dfe6e2] bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -291,13 +370,40 @@ export default function Home() {
                 YouTube output: Private
               </span>
               {job ? (
-                <button className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-moss" onClick={clearCurrentJob}>
-                  <X className="h-4 w-4" />
-                  Clear
-                </button>
+                <>
+                  <button
+                    className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-moss"
+                    onClick={() => {
+                      setReportOpen((value) => !value);
+                      setReportSent(false);
+                    }}
+                  >
+                    <Flag className="h-4 w-4" />
+                    Report
+                  </button>
+                  <button className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-moss" onClick={clearCurrentJob}>
+                    <X className="h-4 w-4" />
+                    Clear
+                  </button>
+                </>
               ) : null}
             </div>
           </div>
+
+          {job ? (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+                <span>{job.progressMessage || currentStatus?.detail || "Waiting for status"}</span>
+                <span>{progressPercent}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-[#edf2ef]">
+                <div
+                  className="h-2 rounded-full bg-moss transition-all"
+                  style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-4 grid grid-cols-6 gap-2">
             {progressSteps.map(([key, label]) => {
@@ -332,8 +438,38 @@ export default function Home() {
               {isWorking ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-moss" /> : <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />}
               <div>
                 <p className="font-semibold">{currentStatus.title}</p>
-                <p className="mt-1 leading-6">{currentStatus.detail}</p>
+                <p className="mt-1 leading-6">{job?.progressMessage || currentStatus.detail}</p>
               </div>
+            </div>
+          ) : null}
+
+          {reportOpen && job ? (
+            <div className="mt-4 rounded-md border border-[#dfe6e2] bg-[#fbfcfb] p-3">
+              <div className="grid gap-3 md:grid-cols-[180px_1fr_auto]">
+                <select
+                  className="focus-ring h-10 rounded-md border border-[#cdd7d2] bg-white px-2 text-sm"
+                  value={reportReason}
+                  onChange={(event) => setReportReason(event.target.value)}
+                >
+                  <option value="quality_issue">Quality issue</option>
+                  <option value="copyright">Copyright concern</option>
+                  <option value="technical_issue">Technical issue</option>
+                </select>
+                <input
+                  className="focus-ring h-10 rounded-md border border-[#cdd7d2] bg-white px-3 text-sm"
+                  placeholder="Optional detail"
+                  value={reportDetails}
+                  onChange={(event) => setReportDetails(event.target.value)}
+                />
+                <button
+                  className="focus-ring h-10 rounded-md bg-ink px-4 text-sm font-semibold text-white disabled:bg-slate-300"
+                  disabled={reportBusy}
+                  onClick={submitReport}
+                >
+                  {reportBusy ? "Sending..." : "Send"}
+                </button>
+              </div>
+              {reportSent ? <p className="mt-2 text-xs font-semibold text-emerald-700">Report received.</p> : null}
             </div>
           ) : null}
 

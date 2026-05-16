@@ -59,6 +59,8 @@ class Job(Base):
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
     retryable: Mapped[bool] = mapped_column(Boolean, default=False)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    progress_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -110,3 +112,17 @@ class JobEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     job: Mapped[Job] = relationship(back_populates="events")
+
+
+class AbuseReport(Base):
+    __tablename__ = "abuse_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    reporter_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    aparat_url: Mapped[str | None] = mapped_column(Text)
+    youtube_video_url: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(String(100))
+    details: Mapped[str | None] = mapped_column(Text)
+    reporter_ip: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

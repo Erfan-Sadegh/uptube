@@ -21,6 +21,10 @@ export type Job = {
   errorCode: string | null;
   errorMessage: string | null;
   retryable: boolean;
+  progressPercent: number;
+  progressMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
   subtitles: SubtitleSegment[];
 };
 
@@ -50,6 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   me: () => request<Me>("/api/me"),
   startGoogle: () => request<{ url: string; state: string }>("/auth/google/start", { method: "POST" }),
+  listJobs: () => request<Job[]>("/api/jobs"),
   createJob: (aparatUrl: string, ownershipConfirmed: boolean, language = "fa") =>
     request<Job>("/api/jobs", {
       method: "POST",
@@ -66,5 +71,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ segments })
     }),
-  upload: (jobId: string) => request<Job>(`/api/jobs/${jobId}/upload`, { method: "POST" })
+  upload: (jobId: string) => request<Job>(`/api/jobs/${jobId}/upload`, { method: "POST" }),
+  reportJob: (jobId: string, reason: string, details: string | null) =>
+    request<{ id: string; reason: string; createdAt: string }>(`/api/jobs/${jobId}/report`, {
+      method: "POST",
+      body: JSON.stringify({ reason, details })
+    })
 };

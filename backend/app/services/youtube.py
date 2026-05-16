@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Callable
 import time
 
 
@@ -17,7 +18,13 @@ class YouTubeUploader:
             raise ValueError("YouTube access token is required")
         self.access_token = access_token
 
-    def upload_private_video(self, video_path: Path, title: str, description: str) -> str:
+    def upload_private_video(
+        self,
+        video_path: Path,
+        title: str,
+        description: str,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> str:
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
@@ -30,13 +37,19 @@ class YouTubeUploader:
         }
         media = MediaFileUpload(str(video_path), chunksize=8 * 1024 * 1024, resumable=True)
         request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-        response = _execute_resumable(request)
+        response = _execute_resumable(request, on_progress=on_progress)
         video_id = response.get("id")
         if not video_id:
             raise YouTubeUploadError("YouTube upload did not return a video id")
         return video_id
 
-    def upload_caption(self, video_id: str, srt_path: Path, language: str = "fa") -> None:
+    def upload_caption(
+        self,
+        video_id: str,
+        srt_path: Path,
+        language: str = "fa",
+        on_progress: Callable[[int], None] | None = None,
+    ) -> None:
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
@@ -53,15 +66,17 @@ class YouTubeUploader:
         }
         media = MediaFileUpload(str(srt_path), mimetype="application/octet-stream", chunksize=256 * 1024, resumable=True)
         request = youtube.captions().insert(part="snippet", body=body, media_body=media)
-        _execute_resumable(request)
+        _execute_resumable(request, on_progress=on_progress)
 
 
-def _execute_resumable(request):
+def _execute_resumable(request, on_progress: Callable[[int], None] | None = None):
     response = None
     retries = 0
     while response is None:
         try:
-            _status, response = request.next_chunk()
+            status, response = request.next_chunk()
+            if status and on_progress:
+                on_progress(int(status.progress() * 100))
             retries = 0
         except Exception:
             retries += 1

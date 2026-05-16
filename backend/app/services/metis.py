@@ -5,6 +5,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.core.retry import with_backoff
+
 
 class TranscriptionProvider(Protocol):
     def create_generation(
@@ -94,13 +96,17 @@ class MetisTranscriptionProvider:
             "operation": "STT",
             "args": args,
         }
-        with httpx.Client(timeout=60, trust_env=False) as client:
-            response = client.post(
-                f"{self.base_url}/api/v2/generate",
-                headers=self._headers,
-                json=payload,
-            )
-        response.raise_for_status()
+        def send() -> httpx.Response:
+            with httpx.Client(timeout=60, trust_env=False) as client:
+                response = client.post(
+                    f"{self.base_url}/api/v2/generate",
+                    headers=self._headers,
+                    json=payload,
+                )
+            response.raise_for_status()
+            return response
+
+        response = with_backoff(send, attempts=3, retryable=(httpx.HTTPError,))
         data = response.json()
         generation_id = data.get("id")
         if not generation_id:
@@ -108,12 +114,16 @@ class MetisTranscriptionProvider:
         return generation_id
 
     def poll_once(self, generation_id: str) -> MetisStatus:
-        with httpx.Client(timeout=60, trust_env=False) as client:
-            response = client.get(
-                f"{self.base_url}/api/v2/generate/{generation_id}",
-                headers=self._headers,
-            )
-        response.raise_for_status()
+        def send() -> httpx.Response:
+            with httpx.Client(timeout=60, trust_env=False) as client:
+                response = client.get(
+                    f"{self.base_url}/api/v2/generate/{generation_id}",
+                    headers=self._headers,
+                )
+            response.raise_for_status()
+            return response
+
+        response = with_backoff(send, attempts=3, retryable=(httpx.HTTPError,))
         data = response.json()
         return MetisStatus(
             generation_id=data.get("id", generation_id),

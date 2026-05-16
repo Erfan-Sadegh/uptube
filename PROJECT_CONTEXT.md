@@ -14,6 +14,8 @@
 - Aparat intake: API-first direct MP4 discovery with `yt-dlp` fallback, because no stable official download contract is assumed.
 - Ownership gate: user must confirm they own or are allowed to republish the source video.
 - Beta limits: max 30 minutes and max 500 MB by default.
+- Per-user beta limits: daily job cap and active job cap are enforced from config.
+- Progress is persisted on each job as `progress_percent` and `progress_message`.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
@@ -27,6 +29,7 @@
 - API: FastAPI, Pydantic, SQLAlchemy.
 - Worker: Redis/RQ-style async worker in Python.
 - Storage: local/S3-compatible temporary artifacts plus Metis Storage for public audio URLs.
+- Local mode falls back to FastAPI background tasks if Redis workers are not available.
 
 ## Job States
 - `queued`
@@ -54,4 +57,6 @@
 - User can edit subtitle text only; segment timing stays unchanged.
 - Upload starts only after `awaiting_review`.
 - Upload UI must keep showing active progress while `uploading_video` or `uploading_caption`.
-- Cleanup should delete audio after transcription and source video after completion or expiry.
+- STT chunks can run in limited parallelism (`METIS_PARALLEL_CHUNKS`) for speed.
+- Cleanup deletes audio after transcription and source video after completion or expiry.
+- Abuse/problem reports are stored without secrets and linked to job/user metadata.
