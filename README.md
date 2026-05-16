@@ -33,6 +33,10 @@ python -m unittest discover tests
 
 See `docs/LOCAL_TESTING.md`.
 
+## Contributing
+
+For teammate setup and Git workflow, see `CONTRIBUTING.md`.
+
 ## Frontend
 
 ```powershell
