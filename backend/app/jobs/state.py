@@ -13,20 +13,22 @@ class JobStatus(StrEnum):
     UPLOADING_CAPTION = "uploading_caption"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
-    JobStatus.QUEUED: {JobStatus.VALIDATING, JobStatus.FAILED},
-    JobStatus.VALIDATING: {JobStatus.DOWNLOADING, JobStatus.FAILED},
-    JobStatus.DOWNLOADING: {JobStatus.EXTRACTING_AUDIO, JobStatus.FAILED},
-    JobStatus.EXTRACTING_AUDIO: {JobStatus.UPLOADING_AUDIO_TO_METIS, JobStatus.FAILED},
-    JobStatus.UPLOADING_AUDIO_TO_METIS: {JobStatus.TRANSCRIBING, JobStatus.FAILED},
-    JobStatus.TRANSCRIBING: {JobStatus.AWAITING_REVIEW, JobStatus.FAILED},
-    JobStatus.AWAITING_REVIEW: {JobStatus.UPLOADING_VIDEO, JobStatus.FAILED},
-    JobStatus.UPLOADING_VIDEO: {JobStatus.UPLOADING_CAPTION, JobStatus.FAILED},
-    JobStatus.UPLOADING_CAPTION: {JobStatus.COMPLETED, JobStatus.FAILED},
+    JobStatus.QUEUED: {JobStatus.VALIDATING, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.VALIDATING: {JobStatus.DOWNLOADING, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.DOWNLOADING: {JobStatus.EXTRACTING_AUDIO, JobStatus.AWAITING_REVIEW, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.EXTRACTING_AUDIO: {JobStatus.UPLOADING_AUDIO_TO_METIS, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.UPLOADING_AUDIO_TO_METIS: {JobStatus.TRANSCRIBING, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.TRANSCRIBING: {JobStatus.AWAITING_REVIEW, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.AWAITING_REVIEW: {JobStatus.UPLOADING_VIDEO, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.UPLOADING_VIDEO: {JobStatus.UPLOADING_CAPTION, JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED},
+    JobStatus.UPLOADING_CAPTION: {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED},
     JobStatus.COMPLETED: set(),
     JobStatus.FAILED: {JobStatus.UPLOADING_VIDEO},
+    JobStatus.CANCELLED: set(),
 }
 
 

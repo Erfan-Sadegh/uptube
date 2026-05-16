@@ -42,6 +42,8 @@ def _apply_lightweight_migrations() -> None:
         statements.append("ALTER TABLE jobs ADD COLUMN progress_percent INTEGER DEFAULT 0")
     if "progress_message" not in job_columns:
         statements.append("ALTER TABLE jobs ADD COLUMN progress_message TEXT")
+    if "subtitles_enabled" not in job_columns:
+        statements.append("ALTER TABLE jobs ADD COLUMN subtitles_enabled BOOLEAN DEFAULT 1")
     if not statements:
         return
     with engine.begin() as connection:

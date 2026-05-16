@@ -2,8 +2,8 @@
 
 ## Product
 - MVP connects Aparat to YouTube for creators.
-- Flow: paste Aparat link, connect YouTube, download video, extract audio, transcribe with Metis Whisper, review/edit SRT text, upload private YouTube video, attach captions, show final link.
-- Default language is Persian (`fa`).
+- Flow: paste Aparat link, connect YouTube, optionally generate subtitles, review/edit, upload private YouTube video, optionally attach captions, show final link.
+- Supported subtitle languages in MVP: Persian (`fa`) and English (`en`).
 
 ## Locked Decisions
 - STT provider: Metis Generations API, model `{ "name": "openai", "model": "whisper-1" }`, operation `STT`.
@@ -16,6 +16,7 @@
 - Beta limits: max 30 minutes and max 500 MB by default.
 - Per-user beta limits: daily job cap and active job cap are enforced from config.
 - Progress is persisted on each job as `progress_percent` and `progress_message`.
+- Subtitle generation is controlled per job by `subtitles_enabled`.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
@@ -43,6 +44,7 @@
 - `uploading_caption`
 - `completed`
 - `failed`
+- `cancelled`
 
 ## External Contracts
 - Metis create: `POST https://api.metisai.ir/api/v2/generate`
@@ -57,6 +59,7 @@
 - User can edit subtitle text only; segment timing stays unchanged.
 - Upload starts only after `awaiting_review`.
 - Upload UI must keep showing active progress while `uploading_video` or `uploading_caption`.
+- If subtitles are disabled, audio extraction, Metis transcription, and caption upload are skipped.
 - STT chunks can run in limited parallelism (`METIS_PARALLEL_CHUNKS`) for speed.
 - Cleanup deletes audio after transcription and source video after completion or expiry.
 - Abuse/problem reports are stored without secrets and linked to job/user metadata.

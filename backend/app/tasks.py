@@ -33,6 +33,10 @@ class ChunkTranscription:
     duration_ms: int
 
 
+class JobCancelled(RuntimeError):
+    pass
+
+
 def enqueue_process_job(job_id: str) -> bool:
     return _enqueue("app.tasks.process_job", job_id)
 
@@ -78,16 +82,33 @@ def process_job(job_id: str) -> None:
                 settings.max_video_bytes,
             )
             metadata = downloader.inspect(job.aparat_url)
+            _ensure_not_cancelled(db, job)
             job.title = job.title or metadata.title or "Aparat video"
-            job.description = job.description or "Uploaded from Aparat with generated subtitles."
+            job.description = job.description or (
+                "Uploaded from Aparat with generated subtitles."
+                if job.subtitles_enabled
+                else "Uploaded from Aparat."
+            )
             db.commit()
 
             _transition(db, job, JobStatus.DOWNLOADING, "downloading", "Downloading source video")
             source_video = downloader.download(job.aparat_url, work_dir)
+            _ensure_not_cancelled(db, job)
             _artifact(db, job, "source_video", str(source_video))
+
+            if not job.subtitles_enabled:
+                _transition(
+                    db,
+                    job,
+                    JobStatus.AWAITING_REVIEW,
+                    "awaiting_review",
+                    "Video is ready to publish",
+                )
+                return
 
             _transition(db, job, JobStatus.EXTRACTING_AUDIO, "extracting_audio", "Extracting audio")
             audio_path = extract_audio(source_video, work_dir)
+            _ensure_not_cancelled(db, job)
 
             _transition(
                 db,
@@ -129,6 +150,7 @@ def process_job(job_id: str) -> None:
                 }
                 for future in as_completed(futures):
                     result = future.result()
+                    _ensure_not_cancelled(db, job)
                     results[result.index] = result
                     completed += 1
                     if result.index == 1 or not job.metis_generation_id:
@@ -167,6 +189,8 @@ def process_job(job_id: str) -> None:
                 "awaiting_review",
                 "Subtitles are ready for review",
             )
+        except JobCancelled:
+            return
         except Exception as exc:
             _fail(db, job, "processing_failed", str(exc), retryable=True)
 
@@ -214,6 +238,12 @@ def upload_job(job_id: str) -> None:
             job.youtube_video_id = video_id
             job.youtube_video_url = f"https://www.youtube.com/watch?v={video_id}"
             db.commit()
+            _ensure_not_cancelled(db, job)
+
+            if not job.subtitles_enabled or not job.subtitles:
+                _transition(db, job, JobStatus.COMPLETED, "completed", "Upload completed")
+                _delete_artifact_kind(db, job, "source_video", "Source video cleaned after completion")
+                return
 
             _transition(
                 db,
@@ -235,6 +265,8 @@ def upload_job(job_id: str) -> None:
             )
             _transition(db, job, JobStatus.COMPLETED, "completed", "Upload completed")
             _delete_artifact_kind(db, job, "source_video", "Source video cleaned after completion")
+        except JobCancelled:
+            return
         except Exception as exc:
             _fail(db, job, "upload_failed", str(exc), retryable=True)
 
@@ -257,6 +289,7 @@ def _transition(
     event_type: str,
     message: str,
 ) -> None:
+    _ensure_not_cancelled(db, job)
     if not can_transition(job.status, target):
         raise RuntimeError(f"Invalid job transition: {job.status} -> {target.value}")
     job.status = target.value
@@ -270,6 +303,9 @@ def _transition(
 
 
 def _set_progress(db: Session, job: Job, percent: int, message: str) -> None:
+    db.refresh(job)
+    if job.status == JobStatus.CANCELLED.value:
+        raise JobCancelled()
     job.progress_percent = max(0, min(100, percent))
     job.progress_message = message
     db.commit()
@@ -416,6 +452,7 @@ def _default_progress(target: JobStatus) -> int:
         JobStatus.UPLOADING_CAPTION: 95,
         JobStatus.COMPLETED: 100,
         JobStatus.FAILED: 0,
+        JobStatus.CANCELLED: 0,
     }[target]
 
 
@@ -436,6 +473,12 @@ def _friendly_error(code: str, message: str) -> str:
     if code == "upload_failed":
         return "YouTube upload failed. You can retry the upload from this step."
     return "Processing failed. Please try again."
+
+
+def _ensure_not_cancelled(db: Session, job: Job) -> None:
+    db.refresh(job)
+    if job.status == JobStatus.CANCELLED.value:
+        raise JobCancelled()
 
 
 def _delete_artifact_kind(db: Session, job: Job, kind: str, message: str) -> None:

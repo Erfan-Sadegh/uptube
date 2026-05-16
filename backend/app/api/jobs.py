@@ -50,6 +50,7 @@ def create_job(
         aparat_url=str(payload.aparat_url),
         ownership_confirmed=True,
         language=payload.language or "fa",
+        subtitles_enabled=payload.subtitles_enabled,
         progress_percent=0,
         progress_message="Queued for processing",
     )
@@ -65,6 +66,8 @@ def create_job(
             "user_agent": request.headers.get("user-agent"),
             "ownership_confirmed": True,
             "aparat_url": str(payload.aparat_url),
+            "subtitles_enabled": payload.subtitles_enabled,
+            "language": payload.language,
         },
     )
     db.commit()
@@ -179,6 +182,30 @@ def upload_job(
     db.commit()
     if not enqueue_upload_job(job.id):
         background_tasks.add_task(run_upload_job, job.id)
+    return _load_job(db, job.id, user.id)
+
+
+@router.post("/{job_id}/cancel", response_model=JobOut)
+def cancel_job(
+    job_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Job:
+    job = _load_job(db, job_id, user.id)
+    if job.status not in ACTIVE_STATUSES and job.status != JobStatus.AWAITING_REVIEW.value:
+        raise HTTPException(status_code=409, detail="This job cannot be cancelled")
+    job.status = JobStatus.CANCELLED.value
+    job.retryable = False
+    job.progress_message = "Cancelled by user"
+    _event(
+        db,
+        job,
+        "cancelled",
+        "Job was cancelled by user",
+        {"ip": request.client.host if request.client else None, "user_agent": request.headers.get("user-agent")},
+    )
+    db.commit()
     return _load_job(db, job.id, user.id)
 
 

@@ -14,6 +14,7 @@ export type Job = {
   aparatUrl: string;
   status: string;
   language: string;
+  subtitlesEnabled: boolean;
   ownershipConfirmed: boolean;
   title: string | null;
   description: string | null;
@@ -55,10 +56,10 @@ export const api = {
   me: () => request<Me>("/api/me"),
   startGoogle: () => request<{ url: string; state: string }>("/auth/google/start", { method: "POST" }),
   listJobs: () => request<Job[]>("/api/jobs"),
-  createJob: (aparatUrl: string, ownershipConfirmed: boolean, language = "fa") =>
+  createJob: (aparatUrl: string, ownershipConfirmed: boolean, language = "fa", subtitlesEnabled = true) =>
     request<Job>("/api/jobs", {
       method: "POST",
-      body: JSON.stringify({ aparatUrl, ownershipConfirmed, language })
+      body: JSON.stringify({ aparatUrl, ownershipConfirmed, language, subtitlesEnabled })
     }),
   getJob: (jobId: string) => request<Job>(`/api/jobs/${jobId}`),
   updateMetadata: (jobId: string, title: string, description: string) =>
@@ -72,6 +73,7 @@ export const api = {
       body: JSON.stringify({ segments })
     }),
   upload: (jobId: string) => request<Job>(`/api/jobs/${jobId}/upload`, { method: "POST" }),
+  cancelJob: (jobId: string) => request<Job>(`/api/jobs/${jobId}/cancel`, { method: "POST" }),
   reportJob: (jobId: string, reason: string, details: string | null) =>
     request<{ id: string; reason: string; createdAt: string }>(`/api/jobs/${jobId}/report`, {
       method: "POST",

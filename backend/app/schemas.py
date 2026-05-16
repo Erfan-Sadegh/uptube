@@ -1,12 +1,20 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 class JobCreate(BaseModel):
     aparat_url: HttpUrl = Field(alias="aparatUrl")
     ownership_confirmed: bool = Field(alias="ownershipConfirmed")
     language: str = "fa"
+    subtitles_enabled: bool = Field(default=True, alias="subtitlesEnabled")
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        if value not in {"fa", "en"}:
+            raise ValueError("Language must be fa or en")
+        return value
 
 
 class JobMetadataUpdate(BaseModel):
@@ -58,6 +66,7 @@ class JobOut(BaseModel):
     aparat_url: str = Field(alias="aparatUrl")
     status: str
     language: str
+    subtitles_enabled: bool = Field(alias="subtitlesEnabled")
     ownership_confirmed: bool = Field(alias="ownershipConfirmed")
     title: str | None
     description: str | None

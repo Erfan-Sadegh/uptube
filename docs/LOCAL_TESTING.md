@@ -12,6 +12,8 @@
 - Metis STT is configured through `.env`.
 - Metis direct `response_format=srt` currently fails server-side, so local testing uses chunked text transcription and renders SRT locally.
 - Metis chunks run with limited parallelism. Tune `METIS_PARALLEL_CHUNKS` carefully; higher is faster but can hit provider limits.
+- Subtitle syncing can be turned off from the UI. In that mode, the worker skips audio extraction, Metis, and YouTube caption upload.
+- Subtitle language can be set to Persian (`fa`) or English (`en`) before starting the job.
 - Per-user beta controls are enforced by `MAX_JOBS_PER_USER_PER_DAY` and `MAX_ACTIVE_JOBS_PER_USER`.
 - YouTube real upload still requires Google OAuth credentials:
   - `GOOGLE_CLIENT_ID`
@@ -45,8 +47,9 @@ Stop:
 ## Test Steps
 1. Open http://localhost:3000.
 2. Paste a public Aparat video URL.
-3. Check the ownership confirmation box.
-4. Click start processing.
-5. Wait until the status reaches review.
-6. Edit subtitle text and save.
-7. Fill Google OAuth values in `.env`, restart, connect YouTube, then click upload.
+3. Connect YouTube if it is not already connected.
+4. Choose subtitle syncing on/off and Persian/English when subtitle syncing is on.
+5. Click Sync now.
+6. Watch the bottom sheet until the status reaches review.
+7. Edit title, description, and subtitle text if subtitles are enabled.
+8. Click Publish to YouTube.

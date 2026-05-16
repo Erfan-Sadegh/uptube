@@ -50,6 +50,7 @@ class Job(Base):
     aparat_url: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(64), default=JobStatus.QUEUED.value, index=True)
     language: Mapped[str] = mapped_column(String(16), default="fa")
+    subtitles_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     ownership_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     title: Mapped[str | None] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
