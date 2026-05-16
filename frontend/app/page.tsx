@@ -428,7 +428,7 @@ export default function Home() {
                   </div>
                 </div>
                 {me?.youtubeConnected ? (
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#27734f]" />
+                  <span className="text-xs font-black uppercase text-[#27734f]">Ready</span>
                 ) : (
                   <button
                     className="focus-ring h-10 rounded-full bg-[#d98f87] px-5 text-xs font-black uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(169,93,85,0.18)]"
