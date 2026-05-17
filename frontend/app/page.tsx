@@ -575,11 +575,11 @@ export default function Home() {
         <>
           <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-3xl px-0 md:px-4">
             <section
-              className="relative overflow-hidden rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
+              className="relative flex flex-col overflow-hidden rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
               style={{ height: sheetHeight }}
             >
             <div
-              className="flex cursor-grab touch-none justify-center pt-5 active:cursor-grabbing"
+              className="flex shrink-0 cursor-grab touch-none justify-center pt-5 active:cursor-grabbing"
               onPointerDown={onDragStart}
               onPointerMove={onDragMove}
               onPointerUp={onDragEnd}
@@ -588,8 +588,8 @@ export default function Home() {
               <div className="h-1.5 w-20 rounded-full bg-[#cfc6c0]" />
             </div>
 
-            <div className="flex h-[calc(100%-28px)] flex-col px-6 pb-0">
-              <div className="mt-8 flex items-start justify-between gap-4">
+            <div className="flex min-h-0 flex-1 flex-col px-6 pb-0">
+              <div className="mt-8 flex shrink-0 items-start justify-between gap-4">
                 <div>
                   <h2 className="text-3xl font-black text-[#3b3431]">{currentStatus?.title}</h2>
                   <p className="mt-3 text-lg font-semibold leading-7 text-[#7b625d]">
@@ -612,14 +612,14 @@ export default function Home() {
                 ) : null}
               </div>
 
-              <div className="mt-7 h-1.5 rounded-full bg-[#e6ded8]">
+              <div className="mt-7 h-1.5 shrink-0 rounded-full bg-[#e6ded8]">
                 <div
                   className="h-1.5 rounded-full bg-[#d98f87] transition-all duration-700"
                   style={{ width: `${clamp(job.progressPercent, 0, 100)}%` }}
                 />
               </div>
 
-              <div className={["mt-8 min-h-0 flex-1 overflow-y-auto pr-1", showSheetFooter ? "pb-28" : "pb-4"].join(" ")}>
+              <div className="mt-8 min-h-0 flex-1 overflow-y-auto pb-4 pr-1">
                 {job.status === "awaiting_review" ? (
                   <div className="space-y-4">
                     <button
@@ -722,45 +722,45 @@ export default function Home() {
 
             </div>
 
+            {showSheetFooter ? (
+              <div className="shrink-0 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] shadow-[0_-14px_34px_rgba(70,50,45,0.12)] backdrop-blur md:px-10">
+                {job.status === "awaiting_review" ? (
+                  <button
+                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
+                    disabled={!canUpload}
+                    onClick={publish}
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                    Publish to YouTube
+                  </button>
+                ) : canRetryProcessing ? (
+                  <button
+                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                    disabled={busy}
+                    onClick={retryProcessing}
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Retry Sync
+                  </button>
+                ) : canRetryUpload ? (
+                  <button
+                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                    disabled={busy}
+                    onClick={publish}
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Retry Upload
+                  </button>
+                ) : job.status === "failed" ? (
+                  <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
+                    <Flag className="h-4 w-4" />
+                    Report issue
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             </section>
           </div>
-          {showSheetFooter ? (
-            <div className="fixed inset-x-0 bottom-0 z-[100] mx-auto flex max-w-3xl items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] shadow-[0_-14px_34px_rgba(70,50,45,0.12)] backdrop-blur md:px-10">
-              {job.status === "awaiting_review" ? (
-                <button
-                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
-                  disabled={!canUpload}
-                  onClick={publish}
-                >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                  Publish to YouTube
-                </button>
-              ) : canRetryProcessing ? (
-                <button
-                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                  disabled={busy}
-                  onClick={retryProcessing}
-                >
-                  <RefreshCcw className="h-4 w-4" />
-                  Retry Sync
-                </button>
-              ) : canRetryUpload ? (
-                <button
-                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                  disabled={busy}
-                  onClick={publish}
-                >
-                  <RefreshCcw className="h-4 w-4" />
-                  Retry Upload
-                </button>
-              ) : job.status === "failed" ? (
-                <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
-                  <Flag className="h-4 w-4" />
-                  Report issue
-                </button>
-              ) : null}
-            </div>
-          ) : null}
         </>
       ) : null}
     </main>
