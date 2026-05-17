@@ -30,9 +30,10 @@ app.include_router(jobs.router)
 def on_startup() -> None:
     init_db()
     try:
-        from app.tasks import cleanup_expired_artifacts
+        from app.tasks import cleanup_expired_artifacts, recover_stale_active_jobs
 
         cleanup_expired_artifacts()
+        recover_stale_active_jobs()
     except Exception:
         pass
 

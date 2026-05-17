@@ -12,7 +12,7 @@ from app.jobs.state import JobStatus, can_transition
 from app.models import AbuseReport, Job, JobEvent, User, now
 from app.schemas import JobCreate, JobEventOut, JobMetadataUpdate, JobOut, ReportCreate, ReportOut, SubtitleUpdate
 from app.services.aparat import AparatValidationError, validate_aparat_url
-from app.tasks import enqueue_process_job, enqueue_upload_job, process_job, upload_job as run_upload_job
+from app.tasks import enqueue_process_job, enqueue_upload_job, process_job, recover_stale_active_jobs, upload_job as run_upload_job
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -82,6 +82,7 @@ def list_jobs(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Job]:
+    recover_stale_active_jobs(user.id)
     return list(
         db.scalars(
             select(Job)
@@ -99,6 +100,7 @@ def get_job(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Job:
+    recover_stale_active_jobs(user.id)
     return _load_job(db, job_id, user.id)
 
 

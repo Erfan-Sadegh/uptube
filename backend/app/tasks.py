@@ -26,6 +26,16 @@ from app.services.youtube import YouTubeUploader
 QUEUE_NAME = "uptube-jobs"
 MIYANDAR_CREDIT = "Synced with miyandar \u2665"
 MIYANDAR_CREDIT_MARKERS = ("made with miyandar", "synced with miyandar", "uploaded with miyandar")
+ACTIVE_PROCESSING_STATUSES = {
+    JobStatus.QUEUED.value,
+    JobStatus.VALIDATING.value,
+    JobStatus.DOWNLOADING.value,
+    JobStatus.EXTRACTING_AUDIO.value,
+    JobStatus.UPLOADING_AUDIO_TO_METIS.value,
+    JobStatus.TRANSCRIBING.value,
+    JobStatus.UPLOADING_VIDEO.value,
+    JobStatus.UPLOADING_CAPTION.value,
+}
 
 
 @dataclass(frozen=True)
@@ -69,6 +79,28 @@ def enqueue_process_job(job_id: str) -> bool:
 
 def enqueue_upload_job(job_id: str) -> bool:
     return _enqueue("app.tasks.upload_job", job_id)
+
+
+def recover_stale_active_jobs(user_id: str | None = None) -> int:
+    settings = get_settings()
+    cutoff = now() - timedelta(minutes=settings.active_job_stale_minutes)
+    recovered = 0
+    with SessionLocal() as db:
+        query = select(Job).where(Job.status.in_(ACTIVE_PROCESSING_STATUSES), Job.updated_at < cutoff)
+        if user_id:
+            query = query.where(Job.user_id == user_id)
+        jobs = db.scalars(query).all()
+        for job in jobs:
+            code = "upload_failed" if job.status in {JobStatus.UPLOADING_VIDEO.value, JobStatus.UPLOADING_CAPTION.value} else "processing_failed"
+            _fail(
+                db,
+                job,
+                code,
+                "Processing was interrupted before it could finish. Please retry.",
+                retryable=True,
+            )
+            recovered += 1
+    return recovered
 
 
 def _enqueue(func_path: str, job_id: str) -> bool:
@@ -176,7 +208,7 @@ def process_job(job_id: str) -> None:
                 f"Audio split into {len(chunks)} chunks",
                 {"count": len(chunks), "parallelism": settings.metis_parallel_chunks},
             )
-            _set_progress(db, job, 42, f"Audio split into {len(chunks)} chunks")
+            _set_progress(db, job, 42, f"Transcribing 0 of {len(chunks)} audio chunks")
 
             results: dict[int, ChunkTranscription] = {}
             completed = 0
@@ -361,6 +393,9 @@ def _set_progress(db: Session, job: Job, percent: int, message: str) -> None:
 
 
 def _fail(db: Session, job: Job, code: str, message: str, retryable: bool) -> None:
+    db.refresh(job)
+    if job.status == JobStatus.CANCELLED.value:
+        return
     user_message = _friendly_error(code, message)
     job.status = JobStatus.FAILED.value
     job.error_code = code
@@ -547,6 +582,10 @@ def _friendly_error(code: str, message: str) -> str:
         return "We could not read this Aparat video. Check that the link is public and try again."
     if "aparat video could not be downloaded" in lowered:
         return "We could not download this Aparat video. The source may be private or temporarily unavailable."
+    if "interrupted" in lowered:
+        return "Processing was interrupted. Please retry."
+    if "ssl" in lowered or "eof" in lowered or "network" in lowered:
+        return "Network communication failed during processing. Please retry."
     if "metis" in lowered:
         return "Subtitle generation failed while contacting Metis. This is retryable."
     if "youtube account is not connected" in lowered:
