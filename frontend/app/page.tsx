@@ -245,12 +245,14 @@ export default function Home() {
   const isWorking = job ? activeStatuses.has(job.status) : false;
   const canRetryUpload = Boolean(job?.status === "failed" && job.errorCode === "upload_failed" && job.retryable && me?.youtubeConnected);
   const canRetryProcessing = Boolean(job?.status === "failed" && job.errorCode === "processing_failed" && job.retryable);
+  const canCancel = Boolean(job && (activeStatuses.has(job.status) || job.status === "awaiting_review"));
   const canStart = useMemo(
     () => url.trim().length > 8 && Boolean(me?.youtubeConnected) && !busy && !isWorking,
     [url, me?.youtubeConnected, busy, isWorking]
   );
   const primaryDisabled = Boolean((me?.youtubeConnected && !canStart) || busy || isWorking);
   const canUpload = Boolean(job?.status === "awaiting_review" && me?.youtubeConnected && !busy);
+  const showSheetFooter = Boolean(job && (job.status === "awaiting_review" || canRetryProcessing || canRetryUpload || job.status === "failed"));
 
   function applyJob(next: Job) {
     setJob(next);
@@ -339,13 +341,19 @@ export default function Home() {
     }
   }
 
-  async function cancelJob() {
+  async function cancelAndCloseJob() {
+    await cancelCurrentJob(true);
+  }
+
+  async function cancelCurrentJob(closeAfterCancel: boolean) {
     if (!job) return;
     setBusy(true);
     setError(null);
     try {
-      applyJob(await api.cancelJob(job.id));
+      const cancelled = await api.cancelJob(job.id);
+      if (!closeAfterCancel) applyJob(cancelled);
       await refreshJobs();
+      if (closeAfterCancel) closeSheet();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not cancel this job.");
     } finally {
@@ -587,7 +595,16 @@ export default function Home() {
                     {job.progressMessage || currentStatus?.detail}
                   </p>
                 </div>
-                {job.status === "completed" || job.status === "failed" || job.status === "cancelled" ? (
+                {canCancel ? (
+                  <button
+                    className="focus-ring inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full border border-[#ded4cd] bg-white/75 px-3 text-xs font-black uppercase tracking-[0.08em] text-[#7b625d] disabled:opacity-45"
+                    disabled={busy}
+                    onClick={cancelAndCloseJob}
+                  >
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                    Cancel
+                  </button>
+                ) : job.status === "completed" || job.status === "failed" || job.status === "cancelled" ? (
                   <button className="focus-ring rounded-md p-2 text-[#7b625d]" onClick={closeSheet}>
                     <X className="h-5 w-5" />
                   </button>
@@ -702,50 +719,43 @@ export default function Home() {
                 ) : null}
               </div>
 
-              <div className="flex shrink-0 items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur">
-                {job.status === "awaiting_review" ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white disabled:bg-[#d4d0cd] disabled:text-[#847b78]"
-                    disabled={!canUpload}
-                    onClick={publish}
-                  >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                    Publish to YouTube
-                  </button>
-                ) : activeStatuses.has(job.status) ? (
-                  <button
-                    className="focus-ring inline-flex items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]"
-                    disabled={busy}
-                    onClick={cancelJob}
-                  >
-                    <X className="h-4 w-4" />
-                    Cancel Process
-                  </button>
-                ) : canRetryProcessing ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                    disabled={busy}
-                    onClick={retryProcessing}
-                  >
-                    <RefreshCcw className="h-4 w-4" />
-                    Retry Sync
-                  </button>
-                ) : canRetryUpload ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                    disabled={busy}
-                    onClick={publish}
-                  >
-                    <RefreshCcw className="h-4 w-4" />
-                    Retry Upload
-                  </button>
-                ) : job.status === "failed" ? (
-                  <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
-                    <Flag className="h-4 w-4" />
-                    Report issue
-                  </button>
-                ) : null}
-              </div>
+              {showSheetFooter ? (
+                <div className="flex shrink-0 items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur">
+                  {job.status === "awaiting_review" ? (
+                    <button
+                      className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white disabled:bg-[#d4d0cd] disabled:text-[#847b78]"
+                      disabled={!canUpload}
+                      onClick={publish}
+                    >
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                      Publish to YouTube
+                    </button>
+                  ) : canRetryProcessing ? (
+                    <button
+                      className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                      disabled={busy}
+                      onClick={retryProcessing}
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                      Retry Sync
+                    </button>
+                  ) : canRetryUpload ? (
+                    <button
+                      className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                      disabled={busy}
+                      onClick={publish}
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                      Retry Upload
+                    </button>
+                  ) : job.status === "failed" ? (
+                    <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
+                      <Flag className="h-4 w-4" />
+                      Report issue
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
