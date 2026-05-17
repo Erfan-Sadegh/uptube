@@ -103,30 +103,45 @@ def process_job(job_id: str) -> None:
         work_dir = settings.local_artifact_dir / job.id
         try:
             _transition(db, job, JobStatus.VALIDATING, "validating", "Validating Aparat URL")
-            downloader = AparatDownloader(
-                settings.max_video_duration_seconds,
-                settings.max_video_bytes,
-            )
-            metadata = _retry_aparat_step(
-                db,
-                job,
-                lambda: downloader.inspect(job.aparat_url),
-                "Aparat did not respond while reading the video",
-            )
-            _ensure_not_cancelled(db, job)
-            job.title = job.title or metadata.title or "Aparat video"
-            job.description = job.description or _default_youtube_description(job.subtitles_enabled)
-            db.commit()
+            cached_source = _copy_cached_source_video(db, job, work_dir)
+            if cached_source:
+                source_video, cached_job = cached_source
+                job.title = job.title or cached_job.title or "Aparat video"
+                job.description = job.description or _default_youtube_description(job.subtitles_enabled)
+                db.commit()
+                _transition(
+                    db,
+                    job,
+                    JobStatus.DOWNLOADING,
+                    "downloading",
+                    "Using cached source video",
+                )
+                _artifact(db, job, "source_video", str(source_video))
+            else:
+                downloader = AparatDownloader(
+                    settings.max_video_duration_seconds,
+                    settings.max_video_bytes,
+                )
+                metadata = _retry_aparat_step(
+                    db,
+                    job,
+                    lambda: downloader.inspect(job.aparat_url),
+                    "Aparat did not respond while reading the video",
+                )
+                _ensure_not_cancelled(db, job)
+                job.title = job.title or metadata.title or "Aparat video"
+                job.description = job.description or _default_youtube_description(job.subtitles_enabled)
+                db.commit()
 
-            _transition(db, job, JobStatus.DOWNLOADING, "downloading", "Downloading source video")
-            source_video = _retry_aparat_step(
-                db,
-                job,
-                lambda: downloader.download(job.aparat_url, work_dir),
-                "Aparat did not respond while downloading the video",
-            )
-            _ensure_not_cancelled(db, job)
-            _artifact(db, job, "source_video", str(source_video))
+                _transition(db, job, JobStatus.DOWNLOADING, "downloading", "Downloading source video")
+                source_video = _retry_aparat_step(
+                    db,
+                    job,
+                    lambda: downloader.download(job.aparat_url, work_dir),
+                    "Aparat did not respond while downloading the video",
+                )
+                _ensure_not_cancelled(db, job)
+                _artifact(db, job, "source_video", str(source_video))
 
             if not job.subtitles_enabled:
                 _transition(
@@ -382,6 +397,38 @@ def _artifact_path(job: Job, kind: str) -> str | None:
     for artifact in job.artifacts:
         if artifact.kind == kind and not artifact.deleted_at:
             return artifact.storage_url
+    return None
+
+
+def _copy_cached_source_video(db: Session, job: Job, work_dir: Path) -> tuple[Path, Job] | None:
+    cached_rows = db.execute(
+        select(Artifact, Job)
+        .join(Job, Artifact.job_id == Job.id)
+        .where(
+            Job.user_id == job.user_id,
+            Job.aparat_url == job.aparat_url,
+            Job.id != job.id,
+            Artifact.kind == "source_video",
+            Artifact.deleted_at.is_(None),
+        )
+        .order_by(Job.updated_at.desc())
+    ).all()
+    for artifact, cached_job in cached_rows:
+        source = Path(artifact.storage_url)
+        if not source.exists() or not source.is_file() or source.stat().st_size == 0:
+            continue
+        work_dir.mkdir(parents=True, exist_ok=True)
+        target = work_dir / f"source{source.suffix or '.mp4'}"
+        if source.resolve() != target.resolve():
+            shutil.copy2(source, target)
+        _event(
+            db,
+            job,
+            "source_cache_hit",
+            "Reused source video from a previous job",
+            {"cached_job_id": cached_job.id},
+        )
+        return target, cached_job
     return None
 
 
