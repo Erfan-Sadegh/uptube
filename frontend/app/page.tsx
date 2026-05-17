@@ -394,7 +394,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f7f3ee] text-[#3b3431]">
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f3ee] text-[#3b3431]">
       <div className={["min-h-screen transition duration-300", job ? "blur-[2px]" : ""].join(" ")}>
         <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-6">
           <header className="flex h-20 items-center justify-between border-b border-[#ded4cd]">
@@ -572,11 +572,12 @@ export default function Home() {
       </div>
 
       {job ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-3xl px-0 md:px-4">
-          <section
-            className="relative overflow-hidden rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
-            style={{ height: sheetHeight }}
-          >
+        <>
+          <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-3xl px-0 md:px-4">
+            <section
+              className="relative overflow-hidden rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
+              style={{ height: sheetHeight }}
+            >
             <div
               className="flex cursor-grab touch-none justify-center pt-5 active:cursor-grabbing"
               onPointerDown={onDragStart}
@@ -721,9 +722,10 @@ export default function Home() {
 
             </div>
 
-          </section>
+            </section>
+          </div>
           {showSheetFooter ? (
-            <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-3xl items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur md:px-10">
+            <div className="fixed inset-x-0 bottom-0 z-[100] mx-auto flex max-w-3xl items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] shadow-[0_-14px_34px_rgba(70,50,45,0.12)] backdrop-blur md:px-10">
               {job.status === "awaiting_review" ? (
                 <button
                   className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
@@ -759,7 +761,7 @@ export default function Home() {
               ) : null}
             </div>
           ) : null}
-        </div>
+        </>
       ) : null}
     </main>
   );
