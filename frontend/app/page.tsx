@@ -88,11 +88,28 @@ function stageProgress(job: Job | null, group: string) {
   }
   if (group === "publish") {
     if (["uploading_video", "uploading_caption"].includes(status)) {
-      return { state: "active", progress: clamp(job.progressPercent - 80, 10, 98), label: `${job.progressPercent}%` };
+      const uploadPercent = extractProgressPercent(job.progressMessage);
+      const progress = uploadPercent ?? clamp(job.progressPercent - 80, 10, 98);
+      return { state: "active", progress: clamp(progress, 0, 100), label: `${clamp(progress, 0, 100)}%` };
     }
     if (status === "completed") return { state: "done", progress: 100, label: "Completed" };
   }
   return { state: "pending", progress: 0, label: "Pending" };
+}
+
+function extractProgressPercent(message: string | null) {
+  if (!message) return null;
+  const match = message.match(/\((\d{1,3})%\)/);
+  if (!match) return null;
+  return clamp(Number(match[1]), 0, 100);
+}
+
+function statusDetail(job: Job | null, fallback: string | undefined) {
+  if (!job?.progressMessage) return fallback;
+  if (["uploading_video", "uploading_caption"].includes(job.status)) {
+    return job.progressMessage.replace(/\s*\(\d{1,3}%\)/, "");
+  }
+  return job.progressMessage;
 }
 
 function StageRow({
@@ -595,7 +612,7 @@ export default function Home() {
                 <div>
                   <h2 className="text-3xl font-black text-[#3b3431]">{currentStatus?.title}</h2>
                   <p className="mt-3 text-lg font-semibold leading-7 text-[#7b625d]">
-                    {job.progressMessage || currentStatus?.detail}
+                    {statusDetail(job, currentStatus?.detail)}
                   </p>
                 </div>
                 {canCancel ? (
