@@ -60,7 +60,7 @@ class AparatDownloader:
             api_error = exc
 
         try:
-            with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+            with yt_dlp.YoutubeDL(_yt_dlp_options({"skip_download": True})) as ydl:
                 info = ydl.extract_info(url, download=False)
 
             duration = info.get("duration")
@@ -90,7 +90,7 @@ class AparatDownloader:
             api_error = exc
 
         try:
-            with yt_dlp.YoutubeDL({"outtmpl": output_template, "quiet": True}) as ydl:
+            with yt_dlp.YoutubeDL(_yt_dlp_options({"outtmpl": output_template})) as ydl:
                 info = ydl.extract_info(url, download=True)
                 duration = info.get("duration")
                 filesize = info.get("filesize") or info.get("filesize_approx")
@@ -193,3 +193,16 @@ def _headers() -> dict[str, str]:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0 Safari/537.36"
         )
     }
+
+
+def _yt_dlp_options(extra: dict) -> dict:
+    options = {
+        "quiet": True,
+        "proxy": "",
+        "socket_timeout": 45,
+        "retries": 3,
+        "extractor_retries": 3,
+        "http_headers": _headers(),
+    }
+    options.update(extra)
+    return options
