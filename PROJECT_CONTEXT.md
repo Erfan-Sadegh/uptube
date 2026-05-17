@@ -64,3 +64,4 @@
 - STT chunks can run in limited parallelism (`METIS_PARALLEL_CHUNKS`) for speed.
 - Cleanup deletes audio after transcription and source video after completion or expiry.
 - Abuse/problem reports are stored without secrets and linked to job/user metadata.
+- Local/beta processing can reuse a previous same-user same-URL `source_video` artifact when Aparat returns transient 5xx errors.
