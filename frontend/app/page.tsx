@@ -618,6 +618,17 @@ export default function Home() {
                 />
               </div>
 
+              {job.status === "awaiting_review" ? (
+                <button
+                  className="focus-ring mt-5 inline-flex h-12 w-full shrink-0 items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
+                  disabled={!canUpload}
+                  onClick={publish}
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                  Publish to YouTube
+                </button>
+              ) : null}
+
               <div className={["mt-8 min-h-0 flex-1 overflow-y-auto pr-1", showSheetFooter ? "pb-28" : "pb-4"].join(" ")}>
                 {job.status === "awaiting_review" ? (
                   <div className="space-y-4">
