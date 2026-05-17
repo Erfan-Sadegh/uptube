@@ -20,7 +20,7 @@ import {
   X,
   Youtube
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { api, type Job, type Me, type SubtitleSegment } from "@/lib/api";
@@ -198,6 +198,7 @@ export default function Home() {
   const [sheetHeight, setSheetHeight] = useState(420);
   const [maxSheetHeight, setMaxSheetHeight] = useState(640);
   const [drag, setDrag] = useState<{ startY: number; startHeight: number } | null>(null);
+  const lastExpandedJobId = useRef<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -251,14 +252,15 @@ export default function Home() {
   }, [job]);
 
   useEffect(() => {
-    if (!job) return;
-    if (["awaiting_review", "uploading_video", "uploading_caption"].includes(job.status)) {
-      setSheetHeight(maxSheetHeight);
+    if (!job) {
+      lastExpandedJobId.current = null;
+      return;
     }
-    else if (job.status === "completed") setSheetHeight(Math.min(maxSheetHeight, 460));
-    else if (job.status === "failed" || job.status === "cancelled") setSheetHeight(Math.min(maxSheetHeight, 380));
-    else setSheetHeight(Math.min(maxSheetHeight, 500));
-  }, [job?.status, maxSheetHeight]);
+    if (lastExpandedJobId.current !== job.id) {
+      setSheetHeight(maxSheetHeight);
+      lastExpandedJobId.current = job.id;
+    }
+  }, [job?.id, maxSheetHeight]);
 
   const currentStatus = job ? statusCopy[job.status] || { title: job.status, detail: "" } : null;
   const isWorking = job ? activeStatuses.has(job.status) : false;
