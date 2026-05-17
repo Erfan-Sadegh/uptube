@@ -24,6 +24,7 @@ from app.services.youtube import YouTubeUploader
 
 
 QUEUE_NAME = "uptube-jobs"
+MIYANDAR_CREDIT = "Made with miyandar ♥"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,11 @@ class ChunkTranscription:
 
 class JobCancelled(RuntimeError):
     pass
+
+
+def _default_youtube_description(subtitles_enabled: bool) -> str:
+    base = "Uploaded from Aparat with generated subtitles." if subtitles_enabled else "Uploaded from Aparat."
+    return f"{base}\n\n{MIYANDAR_CREDIT}"
 
 
 def enqueue_process_job(job_id: str) -> bool:
@@ -90,11 +96,7 @@ def process_job(job_id: str) -> None:
             )
             _ensure_not_cancelled(db, job)
             job.title = job.title or metadata.title or "Aparat video"
-            job.description = job.description or (
-                "Uploaded from Aparat with generated subtitles."
-                if job.subtitles_enabled
-                else "Uploaded from Aparat."
-            )
+            job.description = job.description or _default_youtube_description(job.subtitles_enabled)
             db.commit()
 
             _transition(db, job, JobStatus.DOWNLOADING, "downloading", "Downloading source video")

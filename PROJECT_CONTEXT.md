@@ -17,6 +17,7 @@
 - Per-user beta limits: daily job cap and active job cap are enforced from config.
 - Progress is persisted on each job as `progress_percent` and `progress_message`.
 - Subtitle generation is controlled per job by `subtitles_enabled`.
+- Default YouTube descriptions keep the base upload text and append `Made with miyandar ♥`.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.

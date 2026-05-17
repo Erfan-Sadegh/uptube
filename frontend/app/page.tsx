@@ -546,7 +546,7 @@ export default function Home() {
       {job ? (
         <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-3xl px-0 md:px-4">
           <section
-            className="rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
+            className="relative overflow-hidden rounded-t-[32px] border border-[#ded4cd] bg-[#fbf8f4] text-[#3b3431] shadow-[0_-24px_80px_rgba(70,50,45,0.18)] transition-[height] duration-300"
             style={{ height: sheetHeight }}
           >
             <div
@@ -559,7 +559,7 @@ export default function Home() {
               <div className="h-1.5 w-20 rounded-full bg-[#cfc6c0]" />
             </div>
 
-            <div className="flex h-[calc(100%-28px)] flex-col px-6 pb-5">
+            <div className="flex h-[calc(100%-28px)] flex-col px-6 pb-0">
               <div className="mt-8 flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-3xl font-black text-[#3b3431]">{currentStatus?.title}</h2>
@@ -581,7 +581,7 @@ export default function Home() {
                 />
               </div>
 
-              <div className="mt-8 min-h-0 flex-1 overflow-y-auto pr-1">
+              <div className="mt-8 min-h-0 flex-1 overflow-y-auto pb-4 pr-1">
                 {job.status === "awaiting_review" ? (
                   <div className="space-y-4">
                     <button
@@ -618,7 +618,7 @@ export default function Home() {
                         </div>
 
                         {job.subtitlesEnabled ? (
-                          <div className="max-h-[34vh] space-y-3 overflow-y-auto rounded-md border border-[#ded4cd] bg-[#f7f3ee] p-3">
+                          <div className="max-h-[26vh] space-y-3 overflow-y-auto rounded-md border border-[#ded4cd] bg-[#f7f3ee] p-3 md:max-h-[34vh]">
                             {segments.map((segment) => {
                               const editing = editingSegmentId === segment.id;
                               return (
@@ -682,7 +682,7 @@ export default function Home() {
                 ) : null}
               </div>
 
-              <div className="mt-4 flex items-center justify-center gap-4">
+              <div className="flex shrink-0 items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur">
                 {job.status === "awaiting_review" ? (
                   <button
                     className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white disabled:bg-[#d4d0cd] disabled:text-[#847b78]"
