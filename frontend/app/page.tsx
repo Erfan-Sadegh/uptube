@@ -655,6 +655,15 @@ export default function Home() {
                           />
                         </div>
 
+                        <button
+                          className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
+                          disabled={!canUpload}
+                          onClick={publish}
+                        >
+                          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                          Publish to YouTube
+                        </button>
+
                         {job.subtitlesEnabled ? (
                           <div className="max-h-[26vh] space-y-3 overflow-y-auto rounded-md border border-[#ded4cd] bg-[#f7f3ee] p-3 md:max-h-[34vh]">
                             {segments.map((segment) => {
