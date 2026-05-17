@@ -235,7 +235,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!job) return;
-    if (job.status === "awaiting_review") setSheetHeight(maxSheetHeight);
+    if (["awaiting_review", "uploading_video", "uploading_caption"].includes(job.status)) {
+      setSheetHeight(maxSheetHeight);
+    }
     else if (job.status === "completed") setSheetHeight(Math.min(maxSheetHeight, 460));
     else if (job.status === "failed" || job.status === "cancelled") setSheetHeight(Math.min(maxSheetHeight, 380));
     else setSheetHeight(Math.min(maxSheetHeight, 500));
