@@ -24,7 +24,8 @@ from app.services.youtube import YouTubeUploader
 
 
 QUEUE_NAME = "uptube-jobs"
-MIYANDAR_CREDIT = "Made with miyandar ♥"
+MIYANDAR_CREDIT = "Synced with miyandar \u2665"
+MIYANDAR_CREDIT_MARKERS = ("made with miyandar", "synced with miyandar", "uploaded with miyandar")
 
 
 @dataclass(frozen=True)
@@ -45,12 +46,21 @@ def _default_youtube_description(subtitles_enabled: bool) -> str:
 
 
 def _with_miyandar_credit(description: str) -> str:
-    cleaned = description.rstrip()
-    if "made with miyandar" in cleaned.lower():
-        return description
+    lines = description.rstrip().splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and _is_miyandar_credit(lines[-1]):
+        lines[-1] = MIYANDAR_CREDIT
+        return "\n".join(lines)
+    cleaned = "\n".join(lines)
     if not cleaned:
         return MIYANDAR_CREDIT
     return f"{cleaned}\n\n{MIYANDAR_CREDIT}"
+
+
+def _is_miyandar_credit(line: str) -> bool:
+    lowered = line.strip().lower()
+    return any(marker in lowered for marker in MIYANDAR_CREDIT_MARKERS)
 
 
 def enqueue_process_job(job_id: str) -> bool:

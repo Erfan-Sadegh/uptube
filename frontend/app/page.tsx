@@ -37,7 +37,8 @@ const activeStatuses = new Set([
 ]);
 
 const restorableStatuses = new Set([...activeStatuses, "awaiting_review"]);
-const MIYANDAR_CREDIT = "Made with miyandar ♥";
+const MIYANDAR_CREDIT = "Synced with miyandar \u2665";
+const MIYANDAR_CREDIT_MARKERS = ["made with miyandar", "synced with miyandar", "uploaded with miyandar"];
 
 const statusCopy: Record<string, { title: string; detail: string }> = {
   queued: { title: "Added to Queue", detail: "Your sync job is waiting for the worker." },
@@ -150,9 +151,19 @@ function timeLabel(ms: number) {
 }
 
 function withMiyandarCredit(value: string) {
-  const cleaned = value.trimEnd();
-  if (cleaned.toLowerCase().includes("made with miyandar")) return value;
+  const lines = value.trimEnd().split("\n");
+  while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
+  if (lines.length > 0 && isMiyandarCredit(lines[lines.length - 1])) {
+    lines[lines.length - 1] = MIYANDAR_CREDIT;
+    return lines.join("\n");
+  }
+  const cleaned = lines.join("\n");
   return cleaned ? `${cleaned}\n\n${MIYANDAR_CREDIT}` : MIYANDAR_CREDIT;
+}
+
+function isMiyandarCredit(line: string) {
+  const lowered = line.trim().toLowerCase();
+  return MIYANDAR_CREDIT_MARKERS.some((marker) => lowered.includes(marker));
 }
 
 export default function Home() {
