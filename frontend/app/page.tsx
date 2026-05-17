@@ -618,17 +618,6 @@ export default function Home() {
                 />
               </div>
 
-              {job.status === "awaiting_review" ? (
-                <button
-                  className="focus-ring mt-5 inline-flex h-12 w-full shrink-0 items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
-                  disabled={!canUpload}
-                  onClick={publish}
-                >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                  Publish to YouTube
-                </button>
-              ) : null}
-
               <div className={["mt-8 min-h-0 flex-1 overflow-y-auto pr-1", showSheetFooter ? "pb-28" : "pb-4"].join(" ")}>
                 {job.status === "awaiting_review" ? (
                   <div className="space-y-4">
@@ -732,44 +721,44 @@ export default function Home() {
 
             </div>
 
-            {showSheetFooter ? (
-              <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur">
-                {job.status === "awaiting_review" ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
-                    disabled={!canUpload}
-                    onClick={publish}
-                  >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                    Publish to YouTube
-                  </button>
-                ) : canRetryProcessing ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                    disabled={busy}
-                    onClick={retryProcessing}
-                  >
-                    <RefreshCcw className="h-4 w-4" />
-                    Retry Sync
-                  </button>
-                ) : canRetryUpload ? (
-                  <button
-                    className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
-                    disabled={busy}
-                    onClick={publish}
-                  >
-                    <RefreshCcw className="h-4 w-4" />
-                    Retry Upload
-                  </button>
-                ) : job.status === "failed" ? (
-                  <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
-                    <Flag className="h-4 w-4" />
-                    Report issue
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
           </section>
+          {showSheetFooter ? (
+            <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-3xl items-center justify-center gap-4 border-t border-[#ded4cd] bg-[#fbf8f4]/95 px-6 pt-3 pb-[calc(14px+env(safe-area-inset-bottom))] backdrop-blur md:px-10">
+              {job.status === "awaiting_review" ? (
+                <button
+                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_12px_28px_rgba(169,93,85,0.18)] disabled:bg-[#d4d0cd] disabled:text-[#847b78] disabled:shadow-none"
+                  disabled={!canUpload}
+                  onClick={publish}
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                  Publish to YouTube
+                </button>
+              ) : canRetryProcessing ? (
+                <button
+                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                  disabled={busy}
+                  onClick={retryProcessing}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Retry Sync
+                </button>
+              ) : canRetryUpload ? (
+                <button
+                  className="focus-ring inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#d98f87] text-sm font-black uppercase tracking-[0.16em] text-white"
+                  disabled={busy}
+                  onClick={publish}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Retry Upload
+                </button>
+              ) : job.status === "failed" ? (
+                <button className="focus-ring inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-black text-[#7b625d]" onClick={reportJob}>
+                  <Flag className="h-4 w-4" />
+                  Report issue
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </main>
