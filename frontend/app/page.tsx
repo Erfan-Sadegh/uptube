@@ -37,6 +37,7 @@ const activeStatuses = new Set([
 ]);
 
 const restorableStatuses = new Set([...activeStatuses, "awaiting_review"]);
+const MIYANDAR_CREDIT = "Made with miyandar ♥";
 
 const statusCopy: Record<string, { title: string; detail: string }> = {
   queued: { title: "Added to Queue", detail: "Your sync job is waiting for the worker." },
@@ -148,6 +149,12 @@ function timeLabel(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function withMiyandarCredit(value: string) {
+  const cleaned = value.trimEnd();
+  if (cleaned.toLowerCase().includes("made with miyandar")) return value;
+  return cleaned ? `${cleaned}\n\n${MIYANDAR_CREDIT}` : MIYANDAR_CREDIT;
+}
+
 export default function Home() {
   const [me, setMe] = useState<Me | null>(null);
   const [job, setJob] = useState<Job | null>(null);
@@ -239,7 +246,7 @@ export default function Home() {
     setJobs((current) => [next, ...current.filter((item) => item.id !== next.id)].slice(0, 12));
     setSegments(next.subtitles);
     setTitle(next.title || "");
-    setDescription(next.description || "");
+    setDescription(next.status === "awaiting_review" ? withMiyandarCredit(next.description || "") : next.description || "");
     if (next.status === "completed" || next.status === "failed" || next.status === "cancelled") {
       window.localStorage.removeItem("uptube.lastJobId");
     } else {
@@ -275,7 +282,9 @@ export default function Home() {
 
   async function saveReview() {
     if (!job || job.status !== "awaiting_review") return job;
-    const withMetadata = await api.updateMetadata(job.id, title || "Aparat video", description);
+    const reviewedDescription = withMiyandarCredit(description);
+    setDescription(reviewedDescription);
+    const withMetadata = await api.updateMetadata(job.id, title || "Aparat video", reviewedDescription);
     if (!job.subtitlesEnabled) {
       applyJob(withMetadata);
       return withMetadata;

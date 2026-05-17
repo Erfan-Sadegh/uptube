@@ -41,7 +41,16 @@ class JobCancelled(RuntimeError):
 
 def _default_youtube_description(subtitles_enabled: bool) -> str:
     base = "Uploaded from Aparat with generated subtitles." if subtitles_enabled else "Uploaded from Aparat."
-    return f"{base}\n\n{MIYANDAR_CREDIT}"
+    return _with_miyandar_credit(base)
+
+
+def _with_miyandar_credit(description: str) -> str:
+    cleaned = description.rstrip()
+    if "made with miyandar" in cleaned.lower():
+        return description
+    if not cleaned:
+        return MIYANDAR_CREDIT
+    return f"{cleaned}\n\n{MIYANDAR_CREDIT}"
 
 
 def enqueue_process_job(job_id: str) -> bool:
@@ -223,6 +232,8 @@ def upload_job(job_id: str) -> None:
 
             srt_path = settings.local_artifact_dir / job.id / "final-subtitles.srt"
             srt_path.write_text(_render_job_srt(job), encoding="utf-8")
+            job.description = _with_miyandar_credit(job.description or "")
+            db.commit()
 
             access_token = _refresh_youtube_access_token(job.user.youtube_account.encrypted_refresh_token)
             uploader = YouTubeUploader(access_token)
