@@ -18,6 +18,9 @@
 - Progress is persisted on each job as `progress_percent` and `progress_message`.
 - Subtitle generation is controlled per job by `subtitles_enabled`.
 - Default YouTube descriptions keep the base upload text and append `Synced with miyandar ♥`.
+- STT uses an internal prompt per job; users should not have to write prompts or glossary terms.
+- Default STT chunk size is 60 seconds for better context while keeping retries bounded.
+- STT text is cleaned conservatively before SRT rendering to remove obvious repeated-word/letter noise without rewriting meaning.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
@@ -61,7 +64,7 @@
 - Upload starts only after `awaiting_review`.
 - Upload UI must keep showing active progress while `uploading_video` or `uploading_caption`.
 - If subtitles are disabled, audio extraction, Metis transcription, and caption upload are skipped.
-- STT chunks can run in limited parallelism (`METIS_PARALLEL_CHUNKS`) for speed.
+- STT chunks can run in limited parallelism (`METIS_PARALLEL_CHUNKS`) for speed; chunk size is configurable via `AUDIO_CHUNK_SECONDS`.
 - Cleanup deletes audio after transcription and source video after completion or expiry.
 - Abuse/problem reports are stored without secrets and linked to job/user metadata.
 - Local/beta processing can reuse a previous same-user same-URL `source_video` artifact when Aparat returns transient 5xx errors.

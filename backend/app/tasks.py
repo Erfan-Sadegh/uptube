@@ -20,6 +20,7 @@ from app.services.artifacts import MetisStorageClient
 from app.services.audio import extract_audio, media_duration_seconds, split_audio
 from app.services.metis import MetisTranscriptionProvider
 from app.services.srt import parse_srt, render_srt
+from app.services.transcript_cleanup import build_transcription_prompt, clean_transcript_text
 from app.services.youtube import YouTubeUploader
 
 
@@ -213,6 +214,7 @@ def process_job(job_id: str) -> None:
             results: dict[int, ChunkTranscription] = {}
             completed = 0
             max_workers = max(1, min(settings.metis_parallel_chunks, len(chunks)))
+            transcription_prompt = build_transcription_prompt(job.language, job.title)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
                     executor.submit(
@@ -224,6 +226,7 @@ def process_job(job_id: str) -> None:
                         settings.metis_poll_interval_seconds,
                         settings.metis_timeout_seconds,
                         settings.audio_chunk_seconds,
+                        transcription_prompt,
                     ): index
                     for index, chunk in enumerate(chunks, start=1)
                 }
@@ -531,6 +534,7 @@ def _transcribe_chunk(
     poll_interval_seconds: int,
     timeout_seconds: int,
     fallback_chunk_seconds: int,
+    prompt: str,
 ) -> ChunkTranscription:
     measured_duration = media_duration_seconds(chunk)
     audio_url = MetisStorageClient(api_key).upload(chunk)
@@ -539,13 +543,13 @@ def _transcribe_chunk(
         poll_interval_seconds=poll_interval_seconds,
         timeout_seconds=timeout_seconds,
     )
-    generation_id = provider.create_generation(audio_url, language)
+    generation_id = provider.create_generation(audio_url, language, prompt=prompt)
     text_result = provider.wait_for_text(generation_id)
     duration_ms = int((text_result.duration_seconds or measured_duration or fallback_chunk_seconds) * 1000)
     return ChunkTranscription(
         index=index,
         generation_id=generation_id,
-        text=text_result.text.strip(),
+        text=clean_transcript_text(text_result.text, language),
         duration_ms=duration_ms,
     )
 

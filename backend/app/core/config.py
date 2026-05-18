@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     local_artifact_dir: Path = Field(default=Path("./tmp/artifacts"))
     artifact_retention_hours: int = 6
     metis_parallel_chunks: int = 3
-    audio_chunk_seconds: int = 25
+    audio_chunk_seconds: int = 60
     metis_poll_interval_seconds: int = 5
     metis_timeout_seconds: int = 30 * 60
     active_job_stale_minutes: int = 20

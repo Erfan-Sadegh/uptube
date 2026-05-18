@@ -14,6 +14,7 @@ class TranscriptionProvider(Protocol):
         audio_url: str,
         language: str,
         response_format: str | None = None,
+        prompt: str | None = None,
     ) -> str:
         ...
 
@@ -83,6 +84,7 @@ class MetisTranscriptionProvider:
         audio_url: str,
         language: str = "fa",
         response_format: str | None = None,
+        prompt: str | None = None,
     ) -> str:
         args: dict[str, Any] = {
             "file": audio_url,
@@ -91,6 +93,8 @@ class MetisTranscriptionProvider:
         }
         if response_format:
             args["response_format"] = response_format
+        if prompt:
+            args["prompt"] = prompt
         payload = {
             "model": {"name": "openai", "model": "whisper-1"},
             "operation": "STT",
