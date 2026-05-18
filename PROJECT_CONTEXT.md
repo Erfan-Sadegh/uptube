@@ -6,11 +6,14 @@
 - Supported subtitle languages in MVP: Persian (`fa`) and English (`en`).
 
 ## Locked Decisions
-- STT provider: Metis Generations API, model `{ "name": "openai", "model": "whisper-1" }`, operation `STT`.
+- STT provider: prefer AvalAI when `AVALAI_API_KEY` is configured; otherwise fall back to Metis Generations.
+- AvalAI STT model default: `whisper-1` with `response_format=verbose_json` and `timestamp_granularities[]=word`.
 - Metis result retrieval: polling every 5 seconds minimum. Webhook is later.
 - Subtitle output: SRT only for MVP. No word-level timestamps or timeline editor.
 - Metis currently fails completed jobs when `response_format=srt` is sent; use chunked text transcription and render SRT locally until Metis fixes that runtime bug.
 - Metis also currently fails `response_format=verbose_json` in beta with a Java enum cast error; do not use it in production yet.
+- AvalAI `response_format=srt` currently returned JSON/text in testing, so use word timestamps and render SRT locally.
+- AvalAI requires system/proxy networking (`trust_env=True`); Metis requires direct networking (`trust_env=False`).
 - YouTube privacy: always `private` in MVP.
 - Aparat intake: API-first direct MP4 discovery with `yt-dlp` fallback, because no stable official download contract is assumed.
 - Ownership gate: user must confirm they own or are allowed to republish the source video.
@@ -23,6 +26,7 @@
 - Default STT chunk size is 60 seconds for better context while keeping retries bounded.
 - STT text is cleaned conservatively before SRT rendering to remove obvious repeated-word/letter noise or echoed instructions without rewriting meaning.
 - Long chunk text is split into shorter local SRT rows; timings are approximate until a reliable timestamp response is used.
+- AvalAI word timestamps are grouped into readable local SRT rows; this is the preferred subtitle path while it remains reliable.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
@@ -56,6 +60,7 @@
 - Metis create: `POST https://api.metisai.ir/api/v2/generate`
 - Metis poll: `GET https://api.metisai.ir/api/v2/generate/{generation_id}`
 - Metis target STT args: `file`, `language`, `response_format=srt`, `temperature=0`; current implementation uses chunked text output and local SRT rendering while Metis SRT output fails.
+- AvalAI transcribe: `POST https://api.avalai.ir/v1/audio/transcriptions` as multipart file upload.
 - YouTube scopes: `youtube.upload` and `youtube.force-ssl`.
 - Each completed job should budget at least 500 YouTube quota units.
 

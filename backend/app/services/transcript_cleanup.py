@@ -2,6 +2,7 @@ import re
 import unicodedata
 from collections import Counter
 from math import ceil
+from typing import Protocol
 
 
 _CONTROL_WHITESPACE_RE = re.compile(r"\s+")
@@ -11,6 +12,8 @@ _REPEATED_WORD_RE = re.compile(r"\b([^\W\d_]{2,})(?:\s+\1){3,}\b", re.IGNORECASE
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _MAX_SUBTITLE_SEGMENT_MS = 7_000
 _MAX_SUBTITLE_WORDS = 14
+_MAX_TIMED_SEGMENT_MS = 5_500
+_MAX_TIMED_WORDS = 11
 _INSTRUCTION_ECHO_MARKERS = (
     "\u062a\u0631\u062c\u0645\u0647 \u0646\u06a9\u0646",
     "\u0645\u0648\u0633\u06cc\u0642\u06cc\u060c \u0633\u06a9\u0648\u062a \u0648 \u0622\u0648\u0627\u0647\u0627\u06cc \u0646\u0627\u0645\u0641\u0647\u0648\u0645",
@@ -28,6 +31,12 @@ _PERSIAN_REPLACEMENTS = str.maketrans(
         "ة": "ه",
     }
 )
+
+
+class TimedWord(Protocol):
+    start_ms: int
+    end_ms: int
+    text: str
 
 
 def clean_transcript_text(text: str, language: str = "fa") -> str:
@@ -77,12 +86,51 @@ def split_text_for_subtitle_rows(text: str, start_ms: int, end_ms: int) -> list[
     return rows
 
 
+def subtitle_rows_from_timed_words(words: list[TimedWord], language: str = "fa") -> list[tuple[int, int, str]]:
+    rows: list[tuple[int, int, str]] = []
+    current_words: list[TimedWord] = []
+    for word in words:
+        cleaned_word = clean_transcript_text(word.text, language)
+        if not cleaned_word:
+            continue
+        normalized_word = _Word(word.start_ms, word.end_ms, cleaned_word)
+        if not current_words:
+            current_words.append(normalized_word)
+            continue
+        would_duration = normalized_word.end_ms - current_words[0].start_ms
+        previous_text = current_words[-1].text
+        if (
+            would_duration > _MAX_TIMED_SEGMENT_MS
+            or len(current_words) >= _MAX_TIMED_WORDS
+            or previous_text.endswith((".", "?", "!", "؟"))
+        ):
+            rows.append(_row_from_words(current_words))
+            current_words = [normalized_word]
+        else:
+            current_words.append(normalized_word)
+
+    if current_words:
+        rows.append(_row_from_words(current_words))
+    return rows
+
+
 def _normalize_text(text: str, language: str) -> str:
     normalized = unicodedata.normalize("NFKC", text or "")
     normalized = normalized.replace("\u200f", "").replace("\u200e", "")
     if (language or "fa").lower() == "fa":
         normalized = normalized.translate(_PERSIAN_REPLACEMENTS)
     return _CONTROL_WHITESPACE_RE.sub(" ", normalized).strip()
+
+
+class _Word:
+    def __init__(self, start_ms: int, end_ms: int, text: str):
+        self.start_ms = start_ms
+        self.end_ms = end_ms
+        self.text = text
+
+
+def _row_from_words(words: list[TimedWord]) -> tuple[int, int, str]:
+    return (words[0].start_ms, words[-1].end_ms, " ".join(word.text for word in words))
 
 
 def _looks_like_repeated_noise(text: str) -> bool:

@@ -1,6 +1,15 @@
 import unittest
+from dataclasses import dataclass
 
 from app.services.transcript_cleanup import clean_transcript_text, split_text_for_subtitle_rows
+from app.services.transcript_cleanup import subtitle_rows_from_timed_words
+
+
+@dataclass(frozen=True)
+class Word:
+    start_ms: int
+    end_ms: int
+    text: str
 
 
 class TranscriptCleanupTests(unittest.TestCase):
@@ -30,6 +39,14 @@ class TranscriptCleanupTests(unittest.TestCase):
         self.assertLessEqual(max(end - start for start, end, _ in rows), 14_000)
         self.assertEqual(rows[0][0], 0)
         self.assertEqual(rows[-1][1], 60_000)
+
+    def test_groups_timed_words_into_readable_subtitle_rows(self):
+        words = [Word(index * 700, index * 700 + 500, f"word{index}") for index in range(20)]
+        rows = subtitle_rows_from_timed_words(words, "en")
+        self.assertGreater(len(rows), 1)
+        self.assertLessEqual(max(len(text.split()) for _, _, text in rows), 11)
+        self.assertEqual(rows[0][0], 0)
+        self.assertEqual(rows[-1][1], words[-1].end_ms)
 
 
 if __name__ == "__main__":

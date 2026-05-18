@@ -18,9 +18,14 @@ from app.models import Artifact, Job, JobEvent, SubtitleSegment, now
 from app.services.aparat import AparatDownloader, AparatValidationError
 from app.services.artifacts import MetisStorageClient
 from app.services.audio import extract_audio, media_duration_seconds, split_audio
+from app.services.avalai import AvalAITranscriptionProvider
 from app.services.metis import MetisTranscriptionProvider
 from app.services.srt import parse_srt, render_srt
-from app.services.transcript_cleanup import clean_transcript_text, split_text_for_subtitle_rows
+from app.services.transcript_cleanup import (
+    clean_transcript_text,
+    split_text_for_subtitle_rows,
+    subtitle_rows_from_timed_words,
+)
 from app.services.youtube import YouTubeUploader
 
 
@@ -194,73 +199,23 @@ def process_job(job_id: str) -> None:
                 db,
                 job,
                 JobStatus.UPLOADING_AUDIO_TO_METIS,
-                "metis_storage_uploading",
-                "Preparing audio chunks for Metis",
+                "audio_preparing",
+                "Preparing audio for transcription",
             )
             _artifact(db, job, "audio", str(audio_path))
 
-            _transition(db, job, JobStatus.TRANSCRIBING, "transcribing", "Transcribing audio with Metis")
-
-            chunks = split_audio(audio_path, work_dir / "chunks", chunk_seconds=settings.audio_chunk_seconds)
-            _event(
+            provider_name = _transcription_provider_name(settings)
+            _transition(
                 db,
                 job,
-                "audio_chunked",
-                f"Audio split into {len(chunks)} chunks",
-                {"count": len(chunks), "parallelism": settings.metis_parallel_chunks},
+                JobStatus.TRANSCRIBING,
+                "transcribing",
+                f"Transcribing audio with {provider_name}",
             )
-            _set_progress(db, job, 42, f"Transcribing 0 of {len(chunks)} audio chunks")
-
-            results: dict[int, ChunkTranscription] = {}
-            completed = 0
-            max_workers = max(1, min(settings.metis_parallel_chunks, len(chunks)))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {
-                    executor.submit(
-                        _transcribe_chunk,
-                        index,
-                        chunk,
-                        job.language,
-                        settings.metis_api_key,
-                        settings.metis_poll_interval_seconds,
-                        settings.metis_timeout_seconds,
-                        settings.audio_chunk_seconds,
-                    ): index
-                    for index, chunk in enumerate(chunks, start=1)
-                }
-                for future in as_completed(futures):
-                    result = future.result()
-                    _ensure_not_cancelled(db, job)
-                    results[result.index] = result
-                    completed += 1
-                    if result.index == 1 or not job.metis_generation_id:
-                        job.metis_generation_id = result.generation_id
-                    _event(
-                        db,
-                        job,
-                        "metis_chunk_completed",
-                        f"Transcribed chunk {completed} of {len(chunks)}",
-                        {"generation_id": result.generation_id, "chunk_index": result.index},
-                    )
-                    percent = 45 + int((completed / len(chunks)) * 35)
-                    _set_progress(db, job, percent, f"Transcribed {completed} of {len(chunks)} audio chunks")
-
-            srt_rows: list[tuple[int, int, int, str]] = []
-            offset_ms = 0
-            for index in sorted(results):
-                result = results[index]
-                if result.text:
-                    for start_ms, end_ms, text in split_text_for_subtitle_rows(
-                        result.text,
-                        offset_ms,
-                        offset_ms + result.duration_ms,
-                    ):
-                        srt_rows.append((len(srt_rows) + 1, start_ms, end_ms, text))
-                offset_ms += result.duration_ms
-
-            if not srt_rows:
-                raise RuntimeError("Metis completed without usable subtitle text")
-            srt_content = render_srt(srt_rows)
+            if provider_name == "AvalAI":
+                srt_content = _transcribe_audio_with_avalai(db, job, audio_path, settings)
+            else:
+                srt_content = _transcribe_audio_with_metis(db, job, audio_path, work_dir, settings)
             srt_path = work_dir / "subtitles.srt"
             srt_path.write_text(srt_content, encoding="utf-8")
             _artifact(db, job, "srt", str(srt_path))
@@ -527,6 +482,131 @@ def _refresh_youtube_access_token(encrypted_refresh_token: str) -> str:
     if not access_token:
         raise RuntimeError("Google refresh did not return an access token")
     return access_token
+
+
+def _transcription_provider_name(settings) -> str:
+    configured = (settings.transcription_provider or "").strip().lower()
+    if configured == "avalai":
+        if not settings.avalai_api_key:
+            raise RuntimeError("AVALAI_API_KEY is required for AvalAI transcription")
+        return "AvalAI"
+    if configured == "metis":
+        return "Metis"
+    return "AvalAI" if settings.avalai_api_key else "Metis"
+
+
+def _transcribe_audio_with_avalai(db: Session, job: Job, audio_path: Path, settings) -> str:
+    if audio_path.stat().st_size > settings.avalai_max_audio_bytes:
+        _event(
+            db,
+            job,
+            "avalai_audio_too_large",
+            "Audio is too large for AvalAI; falling back to Metis chunking",
+            {"bytes": audio_path.stat().st_size, "limit": settings.avalai_max_audio_bytes},
+        )
+        return _transcribe_audio_with_metis(db, job, audio_path, audio_path.parent, settings)
+
+    _set_progress(db, job, 42, "Transcribing full audio with AvalAI")
+    provider = AvalAITranscriptionProvider(
+        settings.avalai_api_key,
+        base_url=settings.avalai_base_url,
+        model=settings.avalai_model,
+        timeout_seconds=settings.avalai_timeout_seconds,
+    )
+    result = provider.transcribe_verbose_words(audio_path, job.language)
+    _ensure_not_cancelled(db, job)
+    _event(
+        db,
+        job,
+        "avalai_transcription_completed",
+        "AvalAI transcription completed",
+        {
+            "model": settings.avalai_model,
+            "word_count": len(result.words),
+            "duration_seconds": result.duration_seconds,
+            "usage": result.usage,
+        },
+    )
+
+    timed_rows = subtitle_rows_from_timed_words(result.words, job.language)
+    if timed_rows:
+        _set_progress(db, job, 78, f"Built {len(timed_rows)} timed subtitle rows")
+        return render_srt(
+            [(index, start_ms, end_ms, text) for index, (start_ms, end_ms, text) in enumerate(timed_rows, start=1)]
+        )
+
+    cleaned_text = clean_transcript_text(result.text, job.language)
+    duration_seconds = result.duration_seconds or media_duration_seconds(audio_path) or settings.audio_chunk_seconds
+    fallback_rows = split_text_for_subtitle_rows(cleaned_text, 0, int(duration_seconds * 1000))
+    if not fallback_rows:
+        raise RuntimeError("AvalAI completed without usable subtitle text")
+    _set_progress(db, job, 78, f"Built {len(fallback_rows)} subtitle rows from AvalAI text")
+    return render_srt(
+        [(index, start_ms, end_ms, text) for index, (start_ms, end_ms, text) in enumerate(fallback_rows, start=1)]
+    )
+
+
+def _transcribe_audio_with_metis(db: Session, job: Job, audio_path: Path, work_dir: Path, settings) -> str:
+    chunks = split_audio(audio_path, work_dir / "chunks", chunk_seconds=settings.audio_chunk_seconds)
+    _event(
+        db,
+        job,
+        "audio_chunked",
+        f"Audio split into {len(chunks)} chunks",
+        {"count": len(chunks), "parallelism": settings.metis_parallel_chunks},
+    )
+    _set_progress(db, job, 42, f"Transcribing 0 of {len(chunks)} audio chunks")
+
+    results: dict[int, ChunkTranscription] = {}
+    completed = 0
+    max_workers = max(1, min(settings.metis_parallel_chunks, len(chunks)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _transcribe_chunk,
+                index,
+                chunk,
+                job.language,
+                settings.metis_api_key,
+                settings.metis_poll_interval_seconds,
+                settings.metis_timeout_seconds,
+                settings.audio_chunk_seconds,
+            ): index
+            for index, chunk in enumerate(chunks, start=1)
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            _ensure_not_cancelled(db, job)
+            results[result.index] = result
+            completed += 1
+            if result.index == 1 or not job.metis_generation_id:
+                job.metis_generation_id = result.generation_id
+            _event(
+                db,
+                job,
+                "metis_chunk_completed",
+                f"Transcribed chunk {completed} of {len(chunks)}",
+                {"generation_id": result.generation_id, "chunk_index": result.index},
+            )
+            percent = 45 + int((completed / len(chunks)) * 35)
+            _set_progress(db, job, percent, f"Transcribed {completed} of {len(chunks)} audio chunks")
+
+    srt_rows: list[tuple[int, int, int, str]] = []
+    offset_ms = 0
+    for index in sorted(results):
+        result = results[index]
+        if result.text:
+            for start_ms, end_ms, text in split_text_for_subtitle_rows(
+                result.text,
+                offset_ms,
+                offset_ms + result.duration_ms,
+            ):
+                srt_rows.append((len(srt_rows) + 1, start_ms, end_ms, text))
+        offset_ms += result.duration_ms
+
+    if not srt_rows:
+        raise RuntimeError("Metis completed without usable subtitle text")
+    return render_srt(srt_rows)
 
 
 def _transcribe_chunk(

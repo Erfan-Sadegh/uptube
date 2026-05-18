@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     metis_api_key: str = ""
+    avalai_api_key: str = ""
+    avalai_base_url: str = "https://api.avalai.ir/v1"
+    avalai_model: str = "whisper-1"
+    avalai_timeout_seconds: int = 30 * 60
+    avalai_max_audio_bytes: int = 25 * 1024 * 1024
+    transcription_provider: str = ""
     google_client_id: str = ""
     google_client_secret: str = ""
     youtube_redirect_uri: str = "http://localhost:8000/auth/google/callback"
