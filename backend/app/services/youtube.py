@@ -60,7 +60,7 @@ class YouTubeUploader:
             "snippet": {
                 "videoId": video_id,
                 "language": language,
-                "name": "Generated subtitles",
+                "name": "Miyandar subtitles",
                 "isDraft": False,
             }
         }

@@ -20,7 +20,7 @@ from app.services.artifacts import MetisStorageClient
 from app.services.audio import extract_audio, media_duration_seconds, split_audio
 from app.services.metis import MetisTranscriptionProvider
 from app.services.srt import parse_srt, render_srt
-from app.services.transcript_cleanup import build_transcription_prompt, clean_transcript_text
+from app.services.transcript_cleanup import clean_transcript_text, split_text_for_subtitle_rows
 from app.services.youtube import YouTubeUploader
 
 
@@ -214,7 +214,6 @@ def process_job(job_id: str) -> None:
             results: dict[int, ChunkTranscription] = {}
             completed = 0
             max_workers = max(1, min(settings.metis_parallel_chunks, len(chunks)))
-            transcription_prompt = build_transcription_prompt(job.language, job.title)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
                     executor.submit(
@@ -226,7 +225,6 @@ def process_job(job_id: str) -> None:
                         settings.metis_poll_interval_seconds,
                         settings.metis_timeout_seconds,
                         settings.audio_chunk_seconds,
-                        transcription_prompt,
                     ): index
                     for index, chunk in enumerate(chunks, start=1)
                 }
@@ -252,7 +250,12 @@ def process_job(job_id: str) -> None:
             for index in sorted(results):
                 result = results[index]
                 if result.text:
-                    srt_rows.append((len(srt_rows) + 1, offset_ms, offset_ms + result.duration_ms, result.text))
+                    for start_ms, end_ms, text in split_text_for_subtitle_rows(
+                        result.text,
+                        offset_ms,
+                        offset_ms + result.duration_ms,
+                    ):
+                        srt_rows.append((len(srt_rows) + 1, start_ms, end_ms, text))
                 offset_ms += result.duration_ms
 
             if not srt_rows:
@@ -534,7 +537,6 @@ def _transcribe_chunk(
     poll_interval_seconds: int,
     timeout_seconds: int,
     fallback_chunk_seconds: int,
-    prompt: str,
 ) -> ChunkTranscription:
     measured_duration = media_duration_seconds(chunk)
     audio_url = MetisStorageClient(api_key).upload(chunk)
@@ -543,7 +545,7 @@ def _transcribe_chunk(
         poll_interval_seconds=poll_interval_seconds,
         timeout_seconds=timeout_seconds,
     )
-    generation_id = provider.create_generation(audio_url, language, prompt=prompt)
+    generation_id = provider.create_generation(audio_url, language)
     text_result = provider.wait_for_text(generation_id)
     duration_ms = int((text_result.duration_seconds or measured_duration or fallback_chunk_seconds) * 1000)
     return ChunkTranscription(

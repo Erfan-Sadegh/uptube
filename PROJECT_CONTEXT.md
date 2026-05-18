@@ -10,6 +10,7 @@
 - Metis result retrieval: polling every 5 seconds minimum. Webhook is later.
 - Subtitle output: SRT only for MVP. No word-level timestamps or timeline editor.
 - Metis currently fails completed jobs when `response_format=srt` is sent; use chunked text transcription and render SRT locally until Metis fixes that runtime bug.
+- Metis also currently fails `response_format=verbose_json` in beta with a Java enum cast error; do not use it in production yet.
 - YouTube privacy: always `private` in MVP.
 - Aparat intake: API-first direct MP4 discovery with `yt-dlp` fallback, because no stable official download contract is assumed.
 - Ownership gate: user must confirm they own or are allowed to republish the source video.
@@ -18,9 +19,10 @@
 - Progress is persisted on each job as `progress_percent` and `progress_message`.
 - Subtitle generation is controlled per job by `subtitles_enabled`.
 - Default YouTube descriptions keep the base upload text and append `Synced with miyandar ♥`.
-- STT uses an internal prompt per job; users should not have to write prompts or glossary terms.
+- Do not send `prompt` to Metis `whisper-1`; beta testing showed the wrapper can echo prompt instructions into subtitle text.
 - Default STT chunk size is 60 seconds for better context while keeping retries bounded.
-- STT text is cleaned conservatively before SRT rendering to remove obvious repeated-word/letter noise without rewriting meaning.
+- STT text is cleaned conservatively before SRT rendering to remove obvious repeated-word/letter noise or echoed instructions without rewriting meaning.
+- Long chunk text is split into shorter local SRT rows; timings are approximate until a reliable timestamp response is used.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
