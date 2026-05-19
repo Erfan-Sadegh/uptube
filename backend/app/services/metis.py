@@ -62,6 +62,7 @@ class MetisTranscriptionProvider:
         self,
         api_key: str,
         base_url: str = "https://api.metisai.ir",
+        model: str = "whisper-1",
         poll_interval_seconds: int = 5,
         timeout_seconds: int = 30 * 60,
     ):
@@ -69,6 +70,7 @@ class MetisTranscriptionProvider:
             raise ValueError("METIS_API_KEY is required")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
+        self.model = model
         self.poll_interval_seconds = max(5, poll_interval_seconds)
         self.timeout_seconds = timeout_seconds
 
@@ -96,7 +98,7 @@ class MetisTranscriptionProvider:
         if prompt:
             args["prompt"] = prompt
         payload = {
-            "model": {"name": "openai", "model": "whisper-1"},
+            "model": {"name": "openai", "model": self.model},
             "operation": "STT",
             "args": args,
         }

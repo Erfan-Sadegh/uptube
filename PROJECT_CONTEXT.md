@@ -29,6 +29,7 @@
 - AvalAI word timestamps are grouped into readable local SRT rows; this is the preferred subtitle path while it remains reliable.
 - Metis text-only STT benchmark passed on 5 short Aparat clips for `whisper-1`, `gpt-4o-mini-transcribe`, and `gpt-4o-transcribe`, but none returned usable timestamps.
 - Metis still fails when `response_format` is sent for STT (`srt`, `json`, or `verbose_json`) with a Java enum cast runtime error; treat Metis as text-only until provider behavior changes.
+- Hybrid subtitle path: use AvalAI `whisper-1` word timestamps for timing plus Metis `gpt-4o-mini-transcribe` text for cleaner wording when both keys are configured; fallback to AvalAI-only if the clean-text pass fails.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.

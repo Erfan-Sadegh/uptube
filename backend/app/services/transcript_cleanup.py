@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from collections import Counter
+from dataclasses import dataclass
 from math import ceil
 from typing import Protocol
 
@@ -37,6 +38,14 @@ class TimedWord(Protocol):
     start_ms: int
     end_ms: int
     text: str
+
+
+@dataclass(frozen=True)
+class HybridSubtitleRows:
+    rows: list[tuple[int, int, str]]
+    strategy: str
+    clean_word_count: int
+    timing_word_count: int
 
 
 def clean_transcript_text(text: str, language: str = "fa") -> str:
@@ -114,6 +123,42 @@ def subtitle_rows_from_timed_words(words: list[TimedWord], language: str = "fa")
     return rows
 
 
+def subtitle_rows_from_timed_words_and_text(
+    words: list[TimedWord],
+    clean_text: str,
+    duration_ms: int | None,
+    language: str = "fa",
+) -> HybridSubtitleRows:
+    cleaned_text = clean_transcript_text(clean_text, language)
+    clean_words = cleaned_text.split()
+    timed_rows = subtitle_rows_from_timed_words(words, language)
+    timing_word_count = sum(len(text.split()) for _, _, text in timed_rows)
+    if not timed_rows or not clean_words or timing_word_count == 0:
+        return HybridSubtitleRows([], "unusable", len(clean_words), timing_word_count)
+
+    ratio = len(clean_words) / timing_word_count
+    if 0.55 <= ratio <= 1.8 and len(timed_rows) > 1:
+        rows: list[tuple[int, int, str]] = []
+        row_word_groups = _allocate_words_by_weights(
+            clean_words,
+            [max(1, len(text.split())) for _, _, text in timed_rows],
+        )
+        for (start_ms, end_ms, _), row_words in zip(timed_rows, row_word_groups, strict=False):
+            row_text = " ".join(row_words)
+            if not row_text:
+                continue
+            rows.extend(split_text_for_subtitle_rows(row_text, start_ms, end_ms))
+        if rows:
+            return HybridSubtitleRows(rows, "timed_alignment", len(clean_words), timing_word_count)
+
+    start_ms = timed_rows[0][0]
+    end_ms = duration_ms or timed_rows[-1][1]
+    if end_ms <= start_ms:
+        end_ms = timed_rows[-1][1]
+    rows = split_text_for_subtitle_rows(cleaned_text, start_ms, end_ms)
+    return HybridSubtitleRows(rows, "duration_distribution", len(clean_words), timing_word_count)
+
+
 def _normalize_text(text: str, language: str) -> str:
     normalized = unicodedata.normalize("NFKC", text or "")
     normalized = normalized.replace("\u200f", "").replace("\u200e", "")
@@ -131,6 +176,37 @@ class _Word:
 
 def _row_from_words(words: list[TimedWord]) -> tuple[int, int, str]:
     return (words[0].start_ms, words[-1].end_ms, " ".join(word.text for word in words))
+
+
+def _allocate_words_by_weights(words: list[str], weights: list[int]) -> list[list[str]]:
+    if not weights:
+        return []
+    total_words = len(words)
+    total_weight = sum(max(1, weight) for weight in weights)
+    if total_words == 0 or total_weight == 0:
+        return [[] for _ in weights]
+
+    cuts: list[int] = []
+    cumulative_weight = 0
+    previous_cut = 0
+    for index, weight in enumerate(weights[:-1]):
+        cumulative_weight += max(1, weight)
+        cut = round(total_words * cumulative_weight / total_weight)
+        remaining_rows = len(weights) - index - 1
+        if total_words >= len(weights):
+            cut = max(previous_cut + 1, cut)
+            cut = min(cut, total_words - remaining_rows)
+        else:
+            cut = max(previous_cut, min(cut, total_words))
+        cuts.append(cut)
+        previous_cut = cut
+
+    groups: list[list[str]] = []
+    start = 0
+    for cut in cuts + [total_words]:
+        groups.append(words[start:cut])
+        start = cut
+    return groups
 
 
 def _looks_like_repeated_noise(text: str) -> bool:

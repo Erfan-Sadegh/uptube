@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     avalai_timeout_seconds: int = 30 * 60
     avalai_max_audio_bytes: int = 25 * 1024 * 1024
     transcription_provider: str = ""
+    hybrid_transcription_enabled: bool = True
+    hybrid_text_model: str = "gpt-4o-mini-transcribe"
+    hybrid_text_max_audio_bytes: int = 25 * 1024 * 1024
     google_client_id: str = ""
     google_client_secret: str = ""
     youtube_redirect_uri: str = "http://localhost:8000/auth/google/callback"

@@ -24,6 +24,7 @@ from app.services.srt import parse_srt, render_srt
 from app.services.transcript_cleanup import (
     clean_transcript_text,
     split_text_for_subtitle_rows,
+    subtitle_rows_from_timed_words_and_text,
     subtitle_rows_from_timed_words,
 )
 from app.services.youtube import YouTubeUploader
@@ -50,6 +51,14 @@ class ChunkTranscription:
     generation_id: str
     text: str
     duration_ms: int
+
+
+@dataclass(frozen=True)
+class CleanTextTranscription:
+    generation_id: str
+    model: str
+    text: str
+    duration_seconds: float | None
 
 
 class JobCancelled(RuntimeError):
@@ -506,14 +515,25 @@ def _transcribe_audio_with_avalai(db: Session, job: Job, audio_path: Path, setti
         )
         return _transcribe_audio_with_metis(db, job, audio_path, audio_path.parent, settings)
 
-    _set_progress(db, job, 42, "Transcribing full audio with AvalAI")
-    provider = AvalAITranscriptionProvider(
-        settings.avalai_api_key,
-        base_url=settings.avalai_base_url,
-        model=settings.avalai_model,
-        timeout_seconds=settings.avalai_timeout_seconds,
+    use_hybrid_text = _should_use_hybrid_text(settings, audio_path)
+    _set_progress(
+        db,
+        job,
+        42,
+        "Transcribing timing and clean text" if use_hybrid_text else "Transcribing full audio with AvalAI",
     )
-    result = provider.transcribe_verbose_words(audio_path, job.language)
+
+    clean_text_future = None
+    executor = ThreadPoolExecutor(max_workers=2 if use_hybrid_text else 1)
+    try:
+        timing_future = executor.submit(_transcribe_timing_with_avalai, audio_path, job.language, settings)
+        if use_hybrid_text:
+            clean_text_future = executor.submit(_transcribe_clean_text_with_metis, audio_path, job.language, settings)
+        result = timing_future.result()
+    except Exception:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+
     _ensure_not_cancelled(db, job)
     _event(
         db,
@@ -528,7 +548,77 @@ def _transcribe_audio_with_avalai(db: Session, job: Job, audio_path: Path, setti
         },
     )
 
+    clean_text: CleanTextTranscription | None = None
+    if clean_text_future:
+        _set_progress(db, job, 62, "Improving subtitle text with Metis")
+        try:
+            clean_text = clean_text_future.result()
+            _event(
+                db,
+                job,
+                "hybrid_text_completed",
+                "Metis clean-text pass completed",
+                {
+                    "model": clean_text.model,
+                    "generation_id": clean_text.generation_id,
+                    "word_count": len(clean_text.text.split()),
+                    "duration_seconds": clean_text.duration_seconds,
+                },
+            )
+        except Exception as exc:
+            _event(
+                db,
+                job,
+                "hybrid_text_failed",
+                "Metis clean-text pass failed; using AvalAI text",
+                {"technical_message": str(exc)[:500]},
+            )
+    executor.shutdown(wait=True, cancel_futures=True)
+
     timed_rows = subtitle_rows_from_timed_words(result.words, job.language)
+    duration_seconds = result.duration_seconds or media_duration_seconds(audio_path) or settings.audio_chunk_seconds
+    duration_ms = int(duration_seconds * 1000)
+    if clean_text:
+        hybrid_rows = subtitle_rows_from_timed_words_and_text(
+            result.words,
+            clean_text.text,
+            duration_ms,
+            job.language,
+        )
+        if hybrid_rows.rows:
+            _event(
+                db,
+                job,
+                "hybrid_subtitles_built",
+                "Built subtitles from AvalAI timing and Metis text",
+                {
+                    "strategy": hybrid_rows.strategy,
+                    "clean_word_count": hybrid_rows.clean_word_count,
+                    "timing_word_count": hybrid_rows.timing_word_count,
+                },
+            )
+            _set_progress(db, job, 78, f"Built {len(hybrid_rows.rows)} hybrid subtitle rows")
+            return render_srt(
+                [(index, start_ms, end_ms, text) for index, (start_ms, end_ms, text) in enumerate(hybrid_rows.rows, start=1)]
+            )
+        fallback_rows = split_text_for_subtitle_rows(clean_text.text, 0, duration_ms)
+        if fallback_rows:
+            _event(
+                db,
+                job,
+                "hybrid_subtitles_built",
+                "Built subtitles from Metis text with duration timing",
+                {
+                    "strategy": "metis_duration_distribution",
+                    "clean_word_count": len(clean_text.text.split()),
+                    "timing_word_count": len(result.words),
+                },
+            )
+            _set_progress(db, job, 78, f"Built {len(fallback_rows)} hybrid subtitle rows")
+            return render_srt(
+                [(index, start_ms, end_ms, text) for index, (start_ms, end_ms, text) in enumerate(fallback_rows, start=1)]
+            )
+
     if timed_rows:
         _set_progress(db, job, 78, f"Built {len(timed_rows)} timed subtitle rows")
         return render_srt(
@@ -536,13 +626,52 @@ def _transcribe_audio_with_avalai(db: Session, job: Job, audio_path: Path, setti
         )
 
     cleaned_text = clean_transcript_text(result.text, job.language)
-    duration_seconds = result.duration_seconds or media_duration_seconds(audio_path) or settings.audio_chunk_seconds
     fallback_rows = split_text_for_subtitle_rows(cleaned_text, 0, int(duration_seconds * 1000))
     if not fallback_rows:
         raise RuntimeError("AvalAI completed without usable subtitle text")
     _set_progress(db, job, 78, f"Built {len(fallback_rows)} subtitle rows from AvalAI text")
     return render_srt(
         [(index, start_ms, end_ms, text) for index, (start_ms, end_ms, text) in enumerate(fallback_rows, start=1)]
+    )
+
+
+def _should_use_hybrid_text(settings, audio_path: Path) -> bool:
+    return (
+        bool(settings.hybrid_transcription_enabled)
+        and bool(settings.metis_api_key)
+        and bool(settings.hybrid_text_model)
+        and audio_path.stat().st_size <= settings.hybrid_text_max_audio_bytes
+    )
+
+
+def _transcribe_timing_with_avalai(audio_path: Path, language: str, settings):
+    provider = AvalAITranscriptionProvider(
+        settings.avalai_api_key,
+        base_url=settings.avalai_base_url,
+        model=settings.avalai_model,
+        timeout_seconds=settings.avalai_timeout_seconds,
+    )
+    return provider.transcribe_verbose_words(audio_path, language)
+
+
+def _transcribe_clean_text_with_metis(audio_path: Path, language: str, settings) -> CleanTextTranscription:
+    audio_url = MetisStorageClient(settings.metis_api_key).upload(audio_path)
+    provider = MetisTranscriptionProvider(
+        settings.metis_api_key,
+        model=settings.hybrid_text_model,
+        poll_interval_seconds=settings.metis_poll_interval_seconds,
+        timeout_seconds=settings.metis_timeout_seconds,
+    )
+    generation_id = provider.create_generation(audio_url, language)
+    result = provider.wait_for_text(generation_id)
+    text = clean_transcript_text(result.text, language)
+    if not text:
+        raise RuntimeError("Metis completed without usable clean text")
+    return CleanTextTranscription(
+        generation_id=generation_id,
+        model=settings.hybrid_text_model,
+        text=text,
+        duration_seconds=result.duration_seconds,
     )
 
 

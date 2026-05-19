@@ -2,6 +2,7 @@ import unittest
 from dataclasses import dataclass
 
 from app.services.transcript_cleanup import clean_transcript_text, split_text_for_subtitle_rows
+from app.services.transcript_cleanup import subtitle_rows_from_timed_words_and_text
 from app.services.transcript_cleanup import subtitle_rows_from_timed_words
 
 
@@ -47,6 +48,30 @@ class TranscriptCleanupTests(unittest.TestCase):
         self.assertLessEqual(max(len(text.split()) for _, _, text in rows), 11)
         self.assertEqual(rows[0][0], 0)
         self.assertEqual(rows[-1][1], words[-1].end_ms)
+
+    def test_aligns_clean_text_to_timed_rows_when_word_counts_are_close(self):
+        source_words = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu".split()
+        words = [Word(index * 700, index * 700 + 500, word) for index, word in enumerate(source_words)]
+        clean_text = "today we review capture settings for streaming and recording with better audio levels"
+        result = subtitle_rows_from_timed_words_and_text(words, clean_text, 10_000, "en")
+        self.assertEqual(result.strategy, "timed_alignment")
+        self.assertEqual(result.clean_word_count, 13)
+        self.assertEqual(result.timing_word_count, 12)
+        self.assertEqual(result.rows[0][0], 0)
+        self.assertEqual(result.rows[-1][1], words[-1].end_ms)
+        self.assertIn("today", result.rows[0][2])
+
+    def test_uses_duration_distribution_when_timing_text_missed_many_words(self):
+        words = [Word(0, 500, "short"), Word(10_000, 10_500, "miss")]
+        clean_text = (
+            "many creators explain their setup workflow camera lighting microphone editing upload "
+            "schedule audience retention chapters title thumbnail analytics comments community and growth"
+        )
+        result = subtitle_rows_from_timed_words_and_text(words, clean_text, 30_000, "en")
+        self.assertEqual(result.strategy, "duration_distribution")
+        self.assertEqual(result.rows[0][0], 0)
+        self.assertEqual(result.rows[-1][1], 30_000)
+        self.assertGreater(len(result.rows), 2)
 
 
 if __name__ == "__main__":
