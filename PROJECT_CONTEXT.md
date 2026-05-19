@@ -27,6 +27,8 @@
 - STT text is cleaned conservatively before SRT rendering to remove obvious repeated-word/letter noise or echoed instructions without rewriting meaning.
 - Long chunk text is split into shorter local SRT rows; timings are approximate until a reliable timestamp response is used.
 - AvalAI word timestamps are grouped into readable local SRT rows; this is the preferred subtitle path while it remains reliable.
+- Metis text-only STT benchmark passed on 5 short Aparat clips for `whisper-1`, `gpt-4o-mini-transcribe`, and `gpt-4o-transcribe`, but none returned usable timestamps.
+- Metis still fails when `response_format` is sent for STT (`srt`, `json`, or `verbose_json`) with a Java enum cast runtime error; treat Metis as text-only until provider behavior changes.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
