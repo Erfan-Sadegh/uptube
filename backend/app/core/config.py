@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     audio_chunk_seconds: int = 60
     metis_poll_interval_seconds: int = 5
     metis_timeout_seconds: int = 30 * 60
+    youtube_video_upload_chunk_mb: int = 32
+    youtube_caption_upload_chunk_kb: int = 512
     active_job_stale_minutes: int = 20
     session_cookie_name: str = "uptube_user_id"
     oauth_state_cookie_name: str = "uptube_oauth_state"

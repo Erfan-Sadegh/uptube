@@ -263,7 +263,11 @@ def upload_job(job_id: str) -> None:
             db.commit()
 
             access_token = _refresh_youtube_access_token(job.user.youtube_account.encrypted_refresh_token)
-            uploader = YouTubeUploader(access_token)
+            uploader = YouTubeUploader(
+                access_token,
+                video_chunk_size_mb=settings.youtube_video_upload_chunk_mb,
+                caption_chunk_size_kb=settings.youtube_caption_upload_chunk_kb,
+            )
             if job.status != JobStatus.UPLOADING_VIDEO.value:
                 _transition(
                     db,

@@ -15,6 +15,7 @@ _MAX_SUBTITLE_SEGMENT_MS = 7_000
 _MAX_SUBTITLE_WORDS = 14
 _MAX_TIMED_SEGMENT_MS = 5_500
 _MAX_TIMED_WORDS = 11
+_MAX_LEADING_TIMING_GAP_MS = 12_000
 _INSTRUCTION_ECHO_MARKERS = (
     "\u062a\u0631\u062c\u0645\u0647 \u0646\u06a9\u0646",
     "\u0645\u0648\u0633\u06cc\u0642\u06cc\u060c \u0633\u06a9\u0648\u062a \u0648 \u0622\u0648\u0627\u0647\u0627\u06cc \u0646\u0627\u0645\u0641\u0647\u0648\u0645",
@@ -136,8 +137,10 @@ def subtitle_rows_from_timed_words_and_text(
     if not timed_rows or not clean_words or timing_word_count == 0:
         return HybridSubtitleRows([], "unusable", len(clean_words), timing_word_count)
 
+    end_ms = duration_ms or timed_rows[-1][1]
+    leading_gap_is_too_large = bool(duration_ms and timed_rows[0][0] > _MAX_LEADING_TIMING_GAP_MS)
     ratio = len(clean_words) / timing_word_count
-    if 0.55 <= ratio <= 1.8 and len(timed_rows) > 1:
+    if 0.55 <= ratio <= 1.8 and len(timed_rows) > 1 and not leading_gap_is_too_large:
         rows: list[tuple[int, int, str]] = []
         row_word_groups = _allocate_words_by_weights(
             clean_words,
@@ -151,8 +154,7 @@ def subtitle_rows_from_timed_words_and_text(
         if rows:
             return HybridSubtitleRows(rows, "timed_alignment", len(clean_words), timing_word_count)
 
-    start_ms = timed_rows[0][0]
-    end_ms = duration_ms or timed_rows[-1][1]
+    start_ms = 0 if duration_ms else timed_rows[0][0]
     if end_ms <= start_ms:
         end_ms = timed_rows[-1][1]
     rows = split_text_for_subtitle_rows(cleaned_text, start_ms, end_ms)

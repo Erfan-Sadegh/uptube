@@ -13,10 +13,17 @@ class YouTubeUploadError(RuntimeError):
 
 
 class YouTubeUploader:
-    def __init__(self, access_token: str):
+    def __init__(
+        self,
+        access_token: str,
+        video_chunk_size_mb: int = 32,
+        caption_chunk_size_kb: int = 512,
+    ):
         if not access_token:
             raise ValueError("YouTube access token is required")
         self.access_token = access_token
+        self.video_chunk_size = _resumable_chunk_size(video_chunk_size_mb * 1024 * 1024)
+        self.caption_chunk_size = _resumable_chunk_size(caption_chunk_size_kb * 1024)
 
     def upload_private_video(
         self,
@@ -30,12 +37,12 @@ class YouTubeUploader:
         from googleapiclient.http import MediaFileUpload
 
         credentials = Credentials(token=self.access_token)
-        youtube = build("youtube", "v3", credentials=credentials)
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
         body = {
             "snippet": {"title": title, "description": description},
             "status": {"privacyStatus": "private"},
         }
-        media = MediaFileUpload(str(video_path), chunksize=8 * 1024 * 1024, resumable=True)
+        media = MediaFileUpload(str(video_path), chunksize=self.video_chunk_size, resumable=True)
         request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
         response = _execute_resumable(request, on_progress=on_progress)
         video_id = response.get("id")
@@ -55,7 +62,7 @@ class YouTubeUploader:
         from googleapiclient.http import MediaFileUpload
 
         credentials = Credentials(token=self.access_token)
-        youtube = build("youtube", "v3", credentials=credentials)
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
         body = {
             "snippet": {
                 "videoId": video_id,
@@ -64,9 +71,21 @@ class YouTubeUploader:
                 "isDraft": False,
             }
         }
-        media = MediaFileUpload(str(srt_path), mimetype="application/octet-stream", chunksize=256 * 1024, resumable=True)
+        media = MediaFileUpload(
+            str(srt_path),
+            mimetype="application/octet-stream",
+            chunksize=self.caption_chunk_size,
+            resumable=True,
+        )
         request = youtube.captions().insert(part="snippet", body=body, media_body=media)
         _execute_resumable(request, on_progress=on_progress)
+
+
+def _resumable_chunk_size(value: int) -> int:
+    minimum = 256 * 1024
+    if value <= minimum:
+        return minimum
+    return (value // minimum) * minimum
 
 
 def _execute_resumable(request, on_progress: Callable[[int], None] | None = None):

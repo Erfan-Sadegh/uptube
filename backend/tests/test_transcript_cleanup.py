@@ -62,16 +62,25 @@ class TranscriptCleanupTests(unittest.TestCase):
         self.assertIn("today", result.rows[0][2])
 
     def test_uses_duration_distribution_when_timing_text_missed_many_words(self):
-        words = [Word(0, 500, "short"), Word(10_000, 10_500, "miss")]
+        words = [Word(46_000, 46_500, "short"), Word(60_000, 60_500, "miss")]
         clean_text = (
             "many creators explain their setup workflow camera lighting microphone editing upload "
             "schedule audience retention chapters title thumbnail analytics comments community and growth"
         )
-        result = subtitle_rows_from_timed_words_and_text(words, clean_text, 30_000, "en")
+        result = subtitle_rows_from_timed_words_and_text(words, clean_text, 75_000, "en")
         self.assertEqual(result.strategy, "duration_distribution")
         self.assertEqual(result.rows[0][0], 0)
-        self.assertEqual(result.rows[-1][1], 30_000)
+        self.assertEqual(result.rows[-1][1], 75_000)
         self.assertGreater(len(result.rows), 2)
+
+    def test_large_leading_timing_gap_uses_full_duration_distribution(self):
+        source_words = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu".split()
+        words = [Word(20_000 + index * 700, 20_000 + index * 700 + 500, word) for index, word in enumerate(source_words)]
+        clean_text = "today we review capture settings for streaming and recording with better audio levels"
+        result = subtitle_rows_from_timed_words_and_text(words, clean_text, 40_000, "en")
+        self.assertEqual(result.strategy, "duration_distribution")
+        self.assertEqual(result.rows[0][0], 0)
+        self.assertEqual(result.rows[-1][1], 40_000)
 
 
 if __name__ == "__main__":

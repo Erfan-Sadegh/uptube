@@ -30,6 +30,8 @@
 - Metis text-only STT benchmark passed on 5 short Aparat clips for `whisper-1`, `gpt-4o-mini-transcribe`, and `gpt-4o-transcribe`, but none returned usable timestamps.
 - Metis still fails when `response_format` is sent for STT (`srt`, `json`, or `verbose_json`) with a Java enum cast runtime error; treat Metis as text-only until provider behavior changes.
 - Hybrid subtitle path: use AvalAI `whisper-1` word timestamps for timing plus Metis `gpt-4o-mini-transcribe` text for cleaner wording when both keys are configured; fallback to AvalAI-only if the clean-text pass fails.
+- If AvalAI timing misses a large leading section, hybrid subtitles distribute clean text from 0ms across the full audio duration instead of starting at the first incomplete timestamp.
+- YouTube video upload chunk size defaults to 32MB and is configurable; larger chunks reduce upload round-trips but can be lowered on unstable networks.
 
 ## Security Rules
 - Never commit real API keys, OAuth secrets, refresh tokens, or signed media URLs.
