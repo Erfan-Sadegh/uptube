@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: uptube
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: uptube
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ${UPTUBE_ENV_FILE:-.env.production}
+    environment:
+      DATABASE_URL: postgresql+psycopg://uptube:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/uptube
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_ARTIFACT_DIR: /app/tmp/artifacts
+    volumes:
+      - artifacts:/app/tmp/artifacts
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - ${UPTUBE_ENV_FILE:-.env.production}
+    environment:
+      DATABASE_URL: postgresql+psycopg://uptube:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/uptube
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_ARTIFACT_DIR: /app/tmp/artifacts
+    volumes:
+      - artifacts:/app/tmp/artifacts
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  artifacts:

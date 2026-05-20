@@ -81,3 +81,4 @@
 - Abuse/problem reports are stored without secrets and linked to job/user metadata.
 - Local/beta processing can reuse a previous same-user same-URL `source_video` artifact when Aparat returns transient 5xx errors.
 - Use `backend/scripts/benchmark_avalai.py` for repeatable STT model comparisons; it must not print API keys.
+- Production deploy uses Docker Compose (`docker-compose.prod.yml`) with backend, worker, frontend, nginx, Postgres, Redis, and shared temporary artifacts.

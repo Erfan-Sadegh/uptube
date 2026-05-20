@@ -1,4 +1,6 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+export const API_BASE_URL =
+  configuredApiBaseUrl === undefined ? "http://localhost:8000" : configuredApiBaseUrl;
 
 export type SubtitleSegment = {
   id: string;
