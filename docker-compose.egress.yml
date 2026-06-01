@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      network: mioondar-egress
+      args:
+        HTTP_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        HTTPS_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+        http_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        https_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+    environment:
+      HTTP_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      HTTPS_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+      http_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      https_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+    networks:
+      - default
+      - mioondar_egress
+
+  worker:
+    build:
+      network: mioondar-egress
+      args:
+        HTTP_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        HTTPS_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+        http_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        https_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+    environment:
+      HTTP_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      HTTPS_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+      http_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      https_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+      no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+    networks:
+      - default
+      - mioondar_egress
+
+  frontend:
+    build:
+      network: mioondar-egress
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+        HTTP_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        HTTPS_PROXY: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+        http_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        https_proxy: ${OUTBOUND_HTTP_PROXY:-http://gluetun:8888}
+        no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis,backend,frontend,nginx}
+
+networks:
+  mioondar_egress:
+    external: true
+    name: mioondar-egress

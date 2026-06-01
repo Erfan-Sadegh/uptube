@@ -82,3 +82,8 @@
 - Local/beta processing can reuse a previous same-user same-URL `source_video` artifact when Aparat returns transient 5xx errors.
 - Use `backend/scripts/benchmark_avalai.py` for repeatable STT model comparisons; it must not print API keys.
 - Production deploy uses Docker Compose (`docker-compose.prod.yml`) with backend, worker, frontend, nginx, Postgres, Redis, and shared temporary artifacts.
+- Restricted-network production servers use optional `docker-compose.egress.yml`; only backend and worker join external Docker network `mioondar-egress` and use `http://gluetun:8888`.
+- Keep Gluetun proxy ports bound to server loopback. Never expose unauthenticated proxy ports publicly.
+- Keep server-local Gluetun operations in `docs/RESTRICTED_NETWORK_EGRESS.md`; never copy WireGuard credentials into the repo.
+- Require repeated egress checks before production use. A fresh WireGuard handshake alone does not prove stable provider transit.
+- Current VPS WireGuard endpoint is not production-ready: handshake works, but repeated HTTPS egress checks fail frequently. Replace the provider endpoint or config before deploying the app.
